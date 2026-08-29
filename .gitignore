@@ -11,3 +11,5 @@ apps/api/generated/
 apps/api/prisma/migrations/dev.db
 infrastructure/turn/turnserver.conf
 *.tsbuildinfo
+apps/desktop/release/
+apps/desktop/staging/

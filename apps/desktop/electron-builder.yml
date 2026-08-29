@@ -1,0 +1,37 @@
+electronVersion: 32.3.3
+appId: com.concord.app
+productName: Concord
+directories:
+  app: staging
+  output: C:/Users/jp3p4/AppData/Local/Concord-build/release
+  buildResources: build
+# node_modules entra explicito porque o staging ja e exatamente a arvore de
+# producao, e os pacotes @concord sao copiados a mao (workspace local, nunca
+# publicado no registry). Sem esta linha o electron-builder poda tudo que nao
+# esta declarado em dependencies e o app morre com
+# "Cannot find module '@concord/core'".
+files:
+  - dist/**/*
+  - node_modules/**/*
+  - package.json
+# O core usa modulos nativos (better-sqlite3, sodium-native, udx-native).
+# asarUnpack os mantem em disco real, senao o .node nao carrega de dentro do asar.
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "**/node_modules/better-sqlite3/**"
+  - "**/node_modules/sodium-native/**"
+  - "**/node_modules/udx-native/**"
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: Concord-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Concord
+npmRebuild: true

@@ -10,7 +10,16 @@
   }
 
   body {
-    @apply bg-abyss-900 text-ink-100 antialiased;
+    @apply bg-void-950 text-ink-100 antialiased;
+    /* Impede seleção acidental de texto na moldura do app desktop. */
+    user-select: none;
+  }
+
+  input,
+  textarea,
+  [contenteditable],
+  .selectable {
+    user-select: text;
   }
 
   ::-webkit-scrollbar {
@@ -23,10 +32,35 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply rounded-full bg-abyss-500;
+    @apply rounded-full bg-void-600;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-abyss-400;
+    @apply bg-violet-700;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-violet-500 ring-offset-2 ring-offset-void-950;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white
+           transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-ghost {
+    @apply rounded-lg px-4 py-2 text-sm font-medium text-ink-200 transition
+           hover:bg-void-700 hover:text-ink-100;
+  }
+
+  .field {
+    @apply w-full rounded-lg border border-void-600 bg-void-850 px-3 py-2 text-sm
+           text-ink-100 placeholder:text-ink-400 focus:border-violet-500 focus:outline-none;
+  }
+
+  .panel {
+    @apply rounded-xl border border-void-700 bg-void-900;
   }
 }

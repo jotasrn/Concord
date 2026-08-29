@@ -1,7 +1,12 @@
-import { sha256 } from '@noble/hashes/sha256';
+import { createHash } from 'node:crypto';
 import { fromHex, sign, toHex, verify } from '../identity/keypair';
 import { canonicalBytes } from './canonical';
 import { Operation, SignedFields } from './types';
+
+/** sha256 pelo crypto nativo, evitando dependencia ESM-only no Electron. */
+function sha256Hex(data: Uint8Array): string {
+  return createHash('sha256').update(data).digest('hex');
+}
 
 export function opDigest(fields: SignedFields): Uint8Array {
   return canonicalBytes({
@@ -19,7 +24,7 @@ export function createOperation(fields: SignedFields, privateKey: Uint8Array): O
   const digest = opDigest(fields);
   return {
     ...fields,
-    id: toHex(sha256(digest)),
+    id: sha256Hex(digest),
     signature: toHex(sign(digest, privateKey)),
   };
 }
@@ -34,7 +39,7 @@ export function verifyOperation(op: Operation): boolean {
     const digest = opDigest(op);
 
     // O id e derivado do conteudo: se nao bater, a operacao foi adulterada.
-    if (toHex(sha256(digest)) !== op.id) return false;
+    if (sha256Hex(digest) !== op.id) return false;
 
     // A assinatura prova que o dono de authorKey autorizou exatamente estes bytes.
     return verify(fromHex(op.signature), digest, fromHex(op.authorKey));

@@ -1,0 +1,30 @@
+{
+  "name": "@concord/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build": "npm run typecheck && node scripts/bundle.js && node scripts/copy-renderer.js",
+    "dev": "npm run build && electron .",
+    "start": "electron .",
+    "dist": "electron-builder --config electron-builder.yml --win nsis --publish never",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@concord/core": "0.1.0",
+    "@concord/types": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.5",
+    "app-builder-bin": "^5.0.0-alpha.10",
+    "electron": "32.3.3",
+    "electron-builder": "^25.0.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.5.4"
+  },
+  "build": {
+    "extends": null
+  },
+  "description": "Concord - comunicacao P2P para gamers",
+  "author": "Concord"
+}

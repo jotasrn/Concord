@@ -1,27 +1,80 @@
-import * as ed from '@noble/ed25519';
-import { sha512 } from '@noble/hashes/sha512';
+import {
+  KeyObject,
+  createPrivateKey,
+  createPublicKey,
+  sign as nodeSign,
+  verify as nodeVerify,
+} from 'node:crypto';
 
-// @noble/ed25519 v2 e async por padrao. Registrar o hash sincrono habilita a
-// API sync, que e o que o reducer de operacoes precisa (ele valida milhares de
-// assinaturas em sequencia ao materializar os logs).
-ed.etc.sha512Sync = (...m: Uint8Array[]) => sha512(ed.etc.concatBytes(...m));
+/**
+ * Ed25519 pelo crypto nativo do Node, sem dependencia externa.
+ *
+ * A alternativa (@noble/ed25519) e ESM-only, e o processo principal do Electron
+ * carrega CommonJS - o app nao subia. O nativo tambem e mais rapido, o que
+ * importa porque o reducer valida a assinatura de toda operacao recebida.
+ *
+ * O Node so aceita chaves Ed25519 embrulhadas em DER, entao os prefixos abaixo
+ * convertem entre os 32 bytes crus e o formato que a API exige.
+ */
+const PKCS8_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
+const SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 
 export interface KeyPair {
-  /** Chave privada de 32 bytes. Nunca sai do dispositivo em texto claro. */
+  /** Semente privada de 32 bytes. Nunca sai do dispositivo em texto claro. */
   privateKey: Uint8Array;
   /** Chave publica de 32 bytes. E a identidade do usuario na rede. */
   publicKey: Uint8Array;
+}
+
+function privateKeyObject(seed: Uint8Array): KeyObject {
+  return createPrivateKey({
+    key: Buffer.concat([PKCS8_PREFIX, Buffer.from(seed)]),
+    format: 'der',
+    type: 'pkcs8',
+  });
+}
+
+function publicKeyObject(publicKey: Uint8Array): KeyObject {
+  return createPublicKey({
+    key: Buffer.concat([SPKI_PREFIX, Buffer.from(publicKey)]),
+    format: 'der',
+    type: 'spki',
+  });
+}
+
+/**
+ * Cache de chaves publicas: verificar uma operacao exige montar o KeyObject a
+ * partir do DER, e o reducer reprocessa o log inteiro a cada sincronizacao.
+ */
+const publicKeyCache = new Map<string, KeyObject>();
+const PUBLIC_KEY_CACHE_LIMIT = 512;
+
+function cachedPublicKey(publicKey: Uint8Array): KeyObject {
+  const hex = toHex(publicKey);
+  const cached = publicKeyCache.get(hex);
+  if (cached) return cached;
+
+  const key = publicKeyObject(publicKey);
+  if (publicKeyCache.size >= PUBLIC_KEY_CACHE_LIMIT) {
+    publicKeyCache.clear();
+  }
+  publicKeyCache.set(hex, key);
+  return key;
 }
 
 export function keyPairFromSeed(seed: Uint8Array): KeyPair {
   if (seed.length !== 32) {
     throw new Error(`Seed precisa ter 32 bytes, recebeu ${seed.length}`);
   }
-  return { privateKey: seed, publicKey: ed.getPublicKey(seed) };
+  const priv = privateKeyObject(seed);
+  const spki = createPublicKey(priv).export({ format: 'der', type: 'spki' });
+  // Os 32 bytes crus da chave publica ficam no fim do envelope SPKI.
+  return { privateKey: seed, publicKey: new Uint8Array(spki.subarray(spki.length - 32)) };
 }
 
 export function sign(message: Uint8Array, privateKey: Uint8Array): Uint8Array {
-  return ed.sign(message, privateKey);
+  // Ed25519 nao usa hash separado: o algoritmo vai como null.
+  return new Uint8Array(nodeSign(null, Buffer.from(message), privateKeyObject(privateKey)));
 }
 
 export function verify(
@@ -30,9 +83,15 @@ export function verify(
   publicKey: Uint8Array,
 ): boolean {
   try {
-    return ed.verify(signature, message, publicKey);
+    return nodeVerify(
+      null,
+      Buffer.from(message),
+      cachedPublicKey(publicKey),
+      Buffer.from(signature),
+    );
   } catch {
-    // Assinatura malformada vinda de um peer hostil nao pode derrubar o reducer.
+    // Assinatura ou chave malformada vinda de um peer hostil nao pode
+    // derrubar o reducer.
     return false;
   }
 }

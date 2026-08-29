@@ -1,11 +1,9 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
-import { StatusPage } from './pages/StatusPage';
+import { useState } from 'react';
+import { OnboardingPage } from './pages/OnboardingPage';
+import { AppPage } from './pages/AppPage';
+import type { Profile } from './types/concord-api';
 
 export function App() {
-  return (
-    <Routes>
-      <Route path="/status" element={<StatusPage />} />
-      <Route path="*" element={<Navigate to="/status" replace />} />
-    </Routes>
-  );
+  const [profile, setProfile] = useState<Profile | null>(null);
+  return profile ? <AppPage profile={profile} /> : <OnboardingPage onReady={setProfile} />;
 }

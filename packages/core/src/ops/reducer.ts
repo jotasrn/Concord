@@ -1,6 +1,7 @@
 import { Permission } from '@concord/types';
 import { Db, clearProjection, getAllOperations } from '../db/database';
 import { verifyOperation } from './sign';
+import { validatePayload } from './validate';
 import {
   ChannelCreatePayload,
   ChannelDeletePayload,
@@ -300,9 +301,28 @@ export function rebuildProjection(db: Db): ReduceResult {
         rejected.push({ op, reason: 'assinatura invalida' });
         continue;
       }
-      const reason = applyOne(db, op);
-      if (reason) rejected.push({ op, reason });
-      else applied++;
+
+      // Formato antes de conteudo: applyOne acessa campos do payload
+      // diretamente, e um peer hostil pode mandar qualquer coisa.
+      const invalido = validatePayload(op.type, op.payload);
+      if (invalido) {
+        rejected.push({ op, reason: invalido });
+        continue;
+      }
+
+      try {
+        const reason = applyOne(db, op);
+        if (reason) rejected.push({ op, reason });
+        else applied++;
+      } catch (error) {
+        // Isolar cada operacao e essencial: sem isto, uma unica operacao
+        // problematica aborta a transacao e a projecao inteira some - um peer
+        // hostil derrubaria a sincronizacao de todos os outros.
+        rejected.push({
+          op,
+          reason: `erro ao aplicar: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
     }
   });
   run();

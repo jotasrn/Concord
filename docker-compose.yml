@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: concord-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-concord}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-concord}
+      POSTGRES_DB: ${POSTGRES_DB:-concord}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-concord}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: concord-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  coturn:
+    image: coturn/coturn:4.6-alpine
+    container_name: concord-coturn
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./infrastructure/turn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ['-c', '/etc/coturn/turnserver.conf']
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    container_name: concord-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-concord}:${POSTGRES_PASSWORD:-concord}@postgres:5432/${POSTGRES_DB:-concord}?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      API_PORT: 3333
+      API_CORS_ORIGIN: ${API_CORS_ORIGIN:-http://localhost:5173}
+      TURN_SERVER: ${TURN_SERVER:-turn:localhost:3478}
+      TURN_USERNAME: ${TURN_USERNAME:-concord}
+      TURN_PASSWORD: ${TURN_PASSWORD:-concord}
+    ports:
+      - '3333:3333'
+    profiles: ['full']
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+    container_name: concord-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '5173:80'
+    profiles: ['full']
+
+volumes:
+  postgres_data:
+  redis_data:

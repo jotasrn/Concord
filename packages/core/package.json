@@ -1,0 +1,27 @@
+{
+  "name": "@concord/core",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "node --test --test-reporter=spec \"dist/**/*.test.js\"",
+    "pretest": "npm run build"
+  },
+  "dependencies": {
+    "@concord/types": "0.1.0",
+    "@noble/ed25519": "^2.1.0",
+    "@noble/hashes": "^1.5.0",
+    "@scure/bip39": "^1.4.0",
+    "better-sqlite3": "^11.3.0",
+    "hypercore": "^10.38.0",
+    "hyperswarm": "^4.8.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.16.5",
+    "typescript": "^5.5.4"
+  }
+}

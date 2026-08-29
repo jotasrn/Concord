@@ -1,44 +1,32 @@
 import { EventEmitter } from 'node:events';
-import { createHash } from 'node:crypto';
 import Hyperswarm from 'hyperswarm';
+import { SealedPayload, open, seal, topicFromServerKey } from '../crypto/serverKey';
 import { ConcordStore } from '../store';
 import { Operation } from '../ops/types';
 import {
   FrameDecoder,
+  VoiceSignal,
   Message,
   computeHeads,
   encodeFrame,
   operationsMissingFor,
 } from './protocol';
 
-/**
- * O topico da DHT e derivado do serverId por hash, entao entrar no swarm nao
- * revela o id do servidor.
- *
- * ATENCAO: quem conhece o serverId consegue entrar no topico e ler o log. O
- * serverId (UUID v4, 122 bits) funciona hoje como capacidade secreta. Cifrar
- * as operacoes com uma chave de servidor esta em docs/SYNC.md como proximo
- * passo de seguranca.
- */
-export function serverTopic(serverId: string): Buffer {
-  return createHash('sha256').update(`concord:server:${serverId}`).digest();
-}
-
 interface PeerConnection {
   socket: NodeJS.WritableStream & { destroy(): void };
   decoder: FrameDecoder;
   remoteKey: string;
-}
-
-export interface P2PNodeEvents {
-  'peer:connect': [string];
-  'peer:disconnect': [string];
-  'ops:received': [{ serverId: string; accepted: number }];
+  /** Chave publica Concord, conhecida so apos o hello. */
+  identityKey: string | null;
 }
 
 /**
- * Liga o log local a rede: descobre peers pela DHT, troca operacoes e avisa a
- * UI quando algo novo chega.
+ * Liga o log local a rede: descobre peers pela DHT, troca operacoes cifradas e
+ * avisa a UI quando algo novo chega.
+ *
+ * O topico e derivado da chave do servidor, nao do serverId. Consequencia: sem
+ * a chave nao se encontra o swarm, e mesmo dentro dele as operacoes chegam
+ * cifradas. Antes bastava conhecer o UUID do servidor para ler tudo.
  */
 export class P2PNode extends EventEmitter {
   private swarm: InstanceType<typeof Hyperswarm> | null = null;
@@ -55,7 +43,12 @@ export class P2PNode extends EventEmitter {
 
     this.swarm.on('connection', (socket: any, info: any) => {
       const remoteKey: string = info.publicKey.toString('hex');
-      const peer: PeerConnection = { socket, decoder: new FrameDecoder(), remoteKey };
+      const peer: PeerConnection = {
+        socket,
+        decoder: new FrameDecoder(),
+        remoteKey,
+        identityKey: null,
+      };
       this.peers.set(remoteKey, peer);
       this.emit('peer:connect', remoteKey);
 
@@ -67,7 +60,13 @@ export class P2PNode extends EventEmitter {
           socket.destroy();
           return;
         }
-        for (const message of messages) this.handle(peer, message);
+        for (const message of messages) {
+          try {
+            this.handle(peer, message);
+          } catch {
+            // Um peer nao pode derrubar o no com uma mensagem malformada.
+          }
+        }
       });
 
       const drop = () => {
@@ -77,20 +76,31 @@ export class P2PNode extends EventEmitter {
       socket.on('close', drop);
       socket.on('error', drop);
 
-      // Abre o handshake dizendo em quais servidores estamos.
-      this.send(peer, { t: 'hello', servers: this.store.listServers().map((s) => s.id) });
+      this.send(peer, {
+        t: 'hello',
+        servers: this.readableServers(),
+        me: this.store.publicKeyHex,
+      });
     });
 
-    // Entra nos topicos de todos os servidores ja conhecidos.
-    for (const server of this.store.listServers()) {
-      await this.joinServer(server.id);
+    for (const { serverId } of this.store.knownServerKeys()) {
+      await this.joinServer(serverId);
     }
+  }
+
+  /** Servidores cuja chave temos - os unicos que conseguimos ler ou anunciar. */
+  private readableServers(): string[] {
+    return this.store.knownServerKeys().map((s) => s.serverId);
   }
 
   async joinServer(serverId: string): Promise<void> {
     if (!this.swarm || this.joined.has(serverId)) return;
+
+    const key = this.store.serverKey(serverId);
+    if (!key) return; // Sem chave nao ha topico a entrar.
+
     this.joined.add(serverId);
-    const discovery = this.swarm.join(serverTopic(serverId), { server: true, client: true });
+    const discovery = this.swarm.join(topicFromServerKey(key), { server: true, client: true });
     await discovery.flushed();
   }
 
@@ -102,13 +112,20 @@ export class P2PNode extends EventEmitter {
     }
   }
 
+  /** Cifra as operacoes com a chave do servidor antes de coloca-las na rede. */
+  private sendOps(peer: PeerConnection, serverId: string, ops: Operation[]): void {
+    const key = this.store.serverKey(serverId);
+    if (!key || ops.length === 0) return;
+    this.send(peer, { t: 'ops', serverId, sealed: seal(key, JSON.stringify(ops)) });
+  }
+
   private handle(peer: PeerConnection, message: Message): void {
     switch (message.t) {
       case 'hello': {
-        // Para cada servidor em comum, conta ao peer o que ja temos.
-        const locais = new Set(this.store.listServers().map((s) => s.id));
+        peer.identityKey = message.me;
+        const legiveis = new Set(this.readableServers());
         for (const serverId of message.servers) {
-          if (!locais.has(serverId)) continue;
+          if (!legiveis.has(serverId)) continue;
           this.send(peer, {
             t: 'have',
             serverId,
@@ -119,12 +136,9 @@ export class P2PNode extends EventEmitter {
       }
 
       case 'have': {
-        // O peer disse onde parou: mandamos o que falta e pedimos o nosso.
+        if (!this.store.serverKey(message.serverId)) break;
         const locais = this.store.operationsFor(message.serverId);
-        const faltando = operationsMissingFor(locais, message.heads);
-        if (faltando.length > 0) {
-          this.send(peer, { t: 'ops', serverId: message.serverId, ops: faltando });
-        }
+        this.sendOps(peer, message.serverId, operationsMissingFor(locais, message.heads));
         this.send(peer, {
           t: 'want',
           serverId: message.serverId,
@@ -134,33 +148,91 @@ export class P2PNode extends EventEmitter {
       }
 
       case 'want': {
-        const faltando = operationsMissingFor(
-          this.store.operationsFor(message.serverId),
-          message.heads,
+        if (!this.store.serverKey(message.serverId)) break;
+        this.sendOps(
+          peer,
+          message.serverId,
+          operationsMissingFor(this.store.operationsFor(message.serverId), message.heads),
         );
-        if (faltando.length > 0) {
-          this.send(peer, { t: 'ops', serverId: message.serverId, ops: faltando });
-        }
         break;
       }
 
       case 'ops': {
-        // applyRemoteOperations valida assinatura e permissao de cada uma.
-        const { accepted } = this.store.applyRemoteOperations(message.ops);
+        const key = this.store.serverKey(message.serverId);
+        if (!key) break;
+
+        // Decifrar so funciona com a chave certa: um peer que entrou no topico
+        // por engano nao consegue injetar nada.
+        const plaintext = open(key, message.sealed as SealedPayload);
+        if (plaintext === null) break;
+
+        let ops: Operation[];
+        try {
+          ops = JSON.parse(plaintext) as Operation[];
+        } catch {
+          break;
+        }
+        if (!Array.isArray(ops)) break;
+
+        // applyRemoteOperations valida assinatura, formato e permissao.
+        const { accepted } = this.store.applyRemoteOperations(ops);
         if (accepted > 0) {
           this.emit('ops:received', { serverId: message.serverId, accepted });
         }
         break;
       }
+
+      case 'voice': {
+        const key = this.store.serverKey(message.serverId);
+        if (!key) break;
+
+        const plaintext = open(key, message.sealed as SealedPayload);
+        if (plaintext === null) break;
+
+        let signal: VoiceSignal;
+        try {
+          signal = JSON.parse(plaintext) as VoiceSignal;
+        } catch {
+          break;
+        }
+        if (!signal || typeof signal.kind !== 'string' || typeof signal.channelId !== 'string') {
+          break;
+        }
+
+        // O `from` declarado no payload e ignorado em favor da identidade que o
+        // peer anunciou no hello: senao qualquer um se passaria por outro na
+        // sinalizacao.
+        if (!peer.identityKey) break;
+        signal.from = peer.identityKey;
+
+        // Descarta o que nao e para nos.
+        if (signal.to && signal.to !== this.store.publicKeyHex) break;
+
+        this.emit('voice:signal', { serverId: message.serverId, signal });
+        break;
+      }
+    }
+  }
+
+  /**
+   * Envia um sinal de voz. Com `to` definido vai so para aquele peer; sem ele,
+   * difunde para todos os peers do servidor.
+   */
+  sendVoiceSignal(serverId: string, signal: VoiceSignal): void {
+    const key = this.store.serverKey(serverId);
+    if (!key) return;
+
+    const sealed = seal(key, JSON.stringify({ ...signal, from: this.store.publicKeyHex }));
+    for (const peer of this.peers.values()) {
+      if (signal.to && peer.identityKey !== signal.to) continue;
+      this.send(peer, { t: 'voice', serverId, sealed });
     }
   }
 
   /** Empurra operacoes locais recem-criadas para todos os peers conectados. */
   broadcast(serverId: string, ops: Operation[]): void {
     if (ops.length === 0) return;
-    for (const peer of this.peers.values()) {
-      this.send(peer, { t: 'ops', serverId, ops });
-    }
+    for (const peer of this.peers.values()) this.sendOps(peer, serverId, ops);
   }
 
   peerCount(): number {

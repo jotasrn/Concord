@@ -112,3 +112,30 @@ export function clearProjection(db: Db): void {
     DELETE FROM users;
   `);
 }
+
+// ---------- chaves de servidor ----------
+
+export function saveServerKey(db: Db, serverId: string, key: Buffer): void {
+  db.prepare(
+    `INSERT INTO server_keys (server_id, key_hex, added_at) VALUES (?, ?, ?)
+     ON CONFLICT (server_id) DO UPDATE SET key_hex = excluded.key_hex`,
+  ).run(serverId, key.toString('hex'), Date.now());
+}
+
+export function getServerKey(db: Db, serverId: string): Buffer | null {
+  const row = db
+    .prepare('SELECT key_hex FROM server_keys WHERE server_id = ?')
+    .get(serverId) as { key_hex: string } | undefined;
+  return row ? Buffer.from(row.key_hex, 'hex') : null;
+}
+
+/** Todos os servidores cujo conteudo conseguimos ler. */
+export function listServerKeys(db: Db): { serverId: string; key: Buffer }[] {
+  return db
+    .prepare('SELECT server_id, key_hex FROM server_keys ORDER BY added_at')
+    .all()
+    .map((r) => {
+      const row = r as { server_id: string; key_hex: string };
+      return { serverId: row.server_id, key: Buffer.from(row.key_hex, 'hex') };
+    });
+}

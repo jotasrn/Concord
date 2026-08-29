@@ -17,6 +17,9 @@ function createSession(): SessionType {
   return new Session(join(app.getPath('userData'), 'data'), (serverId) => {
     // Operacoes chegaram de um peer: avisa a UI para recarregar aquele servidor.
     window?.webContents.send('sync:updated', serverId);
+  },
+  (serverId, signal) => {
+    window?.webContents.send('voice:incoming', serverId, signal);
   });
 }
 

@@ -142,5 +142,24 @@ export function registerIpc(session: Session, getWindow: () => BrowserWindow | n
     wrap(() => ({ peers: session.peerCount(), online: session.isUnlocked() })),
   );
 
+  registerVoiceAndInviteIpc(session);
   void getWindow;
+}
+
+/** Handlers de voz e convites, registrados junto com os demais. */
+export function registerVoiceAndInviteIpc(session: Session): void {
+  ipcMain.handle('voice:signal', (_e, serverId: string, signal: unknown) =>
+    wrap(() => {
+      session.sendVoiceSignal(serverId, signal);
+      return true;
+    }),
+  );
+
+  ipcMain.handle('invites:create', (_e, serverId: string) =>
+    wrap(() => session.createInvite(serverId)),
+  );
+
+  ipcMain.handle('invites:accept', (_e, code: string) =>
+    wrap(() => session.acceptInvite(code)),
+  );
 }

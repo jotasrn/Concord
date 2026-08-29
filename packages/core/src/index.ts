@@ -6,3 +6,4 @@ export * from './db/database';
 export * from './store';
 export * from './p2p/protocol';
 export * from './p2p/node';
+export * from './crypto/serverKey';

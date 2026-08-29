@@ -81,6 +81,19 @@ const api = {
     remove: (serverId: string, messageId: string) =>
       call<boolean>('messages:delete', serverId, messageId),
   },
+  voice: {
+    signal: (serverId: string, signal: unknown) =>
+      call<boolean>('voice:signal', serverId, signal),
+    onSignal: (handler: (serverId: string, signal: any) => void) => {
+      const listener = (_e: unknown, serverId: string, signal: any) => handler(serverId, signal);
+      ipcRenderer.on('voice:incoming', listener);
+      return () => ipcRenderer.removeListener('voice:incoming', listener);
+    },
+  },
+  invites: {
+    create: (serverId: string) => call<string>('invites:create', serverId),
+    accept: (code: string) => call<string>('invites:accept', code),
+  },
   network: {
     status: () => call<{ peers: number; online: boolean }>('network:status'),
   },

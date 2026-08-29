@@ -94,6 +94,14 @@ CREATE TABLE IF NOT EXISTS messages (
 -- Indice que sustenta a paginacao do chat, a query mais frequente do app.
 CREATE INDEX IF NOT EXISTS idx_messages_canal ON messages (channel_id, lamport, id);
 
+-- Chaves simetricas dos servidores em que participamos. Nunca sai daqui:
+-- e o que da acesso de leitura ao historico.
+CREATE TABLE IF NOT EXISTS server_keys (
+  server_id TEXT PRIMARY KEY,
+  key_hex   TEXT NOT NULL,
+  added_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL

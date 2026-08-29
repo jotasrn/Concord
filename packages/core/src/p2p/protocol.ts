@@ -1,3 +1,4 @@
+import { SealedPayload } from '../crypto/serverKey';
 import { Operation } from '../ops/types';
 
 /**
@@ -9,10 +10,15 @@ import { Operation } from '../ops/types';
  * exatamente o caso: "me diz onde voce parou, eu te mando o que falta".
  */
 export type Message =
-  | { t: 'hello'; servers: string[] }
+  // 'me' e a chave publica Concord do peer. O id do Hyperswarm e efemero e
+  // nao serve para enderecar sinalizacao de voz.
+  | { t: 'hello'; servers: string[]; me: string }
   | { t: 'have'; serverId: string; heads: Record<string, number> }
   | { t: 'want'; serverId: string; heads: Record<string, number> }
-  | { t: 'ops'; serverId: string; ops: Operation[] };
+  // As operacoes viajam cifradas com a chave do servidor.
+  | { t: 'ops'; serverId: string; sealed: SealedPayload }
+  // Sinalizacao WebRTC e presenca de voz, cifradas com a chave do servidor.
+  | { t: 'voice'; serverId: string; sealed: SealedPayload };
 
 /** Maior seq conhecido por autor. E o "onde eu parei" de cada log. */
 export type Heads = Record<string, number>;
@@ -75,4 +81,15 @@ export class FrameDecoder {
     }
     return messages;
   }
+}
+
+/** Conteudo de uma mensagem de voz, apos decifrar. */
+export interface VoiceSignal {
+  kind: 'join' | 'leave' | 'offer' | 'answer' | 'ice' | 'state';
+  /** Chave publica Concord de quem enviou. */
+  from: string;
+  /** Destinatario; ausente significa difusao para o canal. */
+  to?: string;
+  channelId: string;
+  data?: unknown;
 }

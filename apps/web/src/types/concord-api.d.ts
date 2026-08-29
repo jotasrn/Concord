@@ -64,6 +64,14 @@ export interface ConcordApi {
     send(serverId: string, channelId: string, content: string): Promise<string>;
     remove(serverId: string, messageId: string): Promise<boolean>;
   };
+  voice: {
+    signal(serverId: string, signal: unknown): Promise<boolean>;
+    onSignal(handler: (serverId: string, signal: any) => void): () => void;
+  };
+  invites: {
+    create(serverId: string): Promise<string>;
+    accept(code: string): Promise<string>;
+  };
   network: {
     status(): Promise<{ peers: number; online: boolean }>;
   };

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, Hash, Plus, Radio, Send, Settings, UserPlus, Volume2 } from 'lucide-react';
+import { Copy, Hash, LogIn, Plus, Radio, Send, Settings, Share2, UserPlus, Volume2 } from 'lucide-react';
 import { Avatar, Button, ErrorBanner, Input } from '../components/ui';
 import { AudioSettingsPanel } from '../features/voice/AudioSettingsPanel';
 import { PromptModal, PromptRequest } from '../components/PromptModal';
+import { CallPanel } from '../features/voice/CallPanel';
+import { useVoiceCall } from '../features/voice/useVoiceCall';
+import { sounds } from '../features/voice/audio/SoundEffects';
 import type { ChannelView, MemberView, MessageView, Profile, ServerView } from '../types/concord-api';
 
 export function AppPage({ profile }: { profile: Profile }) {
@@ -18,6 +21,9 @@ export function AppPage({ profile }: { profile: Profile }) {
   const [showSettings, setShowSettings] = useState(false);
   const [prompt, setPrompt] = useState<PromptRequest | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const memberNames = new Map(members.map((m) => [m.userKey, m.displayName]));
+  const call = useVoiceCall(activeServer, memberNames);
 
   const report = (e: unknown) => setError(e instanceof Error ? e.message : 'Erro inesperado');
 
@@ -75,7 +81,10 @@ export function AppPage({ profile }: { profile: Profile }) {
       void loadServers();
       if (serverId === activeServer) {
         void loadServerContent(serverId);
-        if (activeChannel) void loadMessages(activeChannel);
+        if (activeChannel) {
+          void loadMessages(activeChannel);
+          sounds.play('message');
+        }
       }
     });
   }, [activeServer, activeChannel, loadServers, loadServerContent, loadMessages]);
@@ -151,6 +160,45 @@ export function AppPage({ profile }: { profile: Profile }) {
     });
   }
 
+  function criarConvite() {
+    if (!activeServer) return;
+    void window.concord.invites
+      .create(activeServer)
+      .then((codigo) => {
+        void navigator.clipboard.writeText(codigo);
+        sounds.play('success');
+        setPrompt({
+          title: 'Convite copiado',
+          description:
+            'Ja esta na area de transferencia. Quem receber consegue LER o historico; para escrever, adicione a chave publica dele nos membros.',
+          fields: [{ name: 'codigo', label: 'Codigo', multiline: true }],
+          confirmLabel: 'Fechar',
+          onSubmit: () => undefined,
+        });
+      })
+      .catch(report);
+  }
+
+  function entrarPorConvite() {
+    setPrompt({
+      title: 'Entrar com convite',
+      description: 'Cole o codigo que seu amigo gerou.',
+      fields: [{ name: 'codigo', label: 'Codigo do convite', multiline: true }],
+      confirmLabel: 'Entrar',
+      onSubmit: async ({ codigo }) => {
+        try {
+          const id = await window.concord.invites.accept(codigo.trim());
+          sounds.play('success');
+          await loadServers();
+          setActiveServer(id);
+        } catch (e) {
+          sounds.play('error');
+          report(e);
+        }
+      },
+    });
+  }
+
   async function send() {
     if (!activeServer || !activeChannel || !draft.trim()) return;
     const content = draft;
@@ -188,6 +236,13 @@ export function AppPage({ profile }: { profile: Profile }) {
           </button>
         ))}
         <button
+          onClick={entrarPorConvite}
+          title="Entrar com um convite"
+          className="flex h-11 w-11 items-center justify-center rounded-2xl border border-dashed border-void-500 text-ink-300 transition hover:border-violet-500 hover:text-violet-400"
+        >
+          <LogIn className="h-5 w-5" />
+        </button>
+        <button
           onClick={createServer}
           title="Criar servidor"
           className="flex h-11 w-11 items-center justify-center rounded-2xl border border-dashed border-void-500 text-ink-300 transition hover:border-violet-500 hover:text-violet-400"
@@ -199,9 +254,18 @@ export function AppPage({ profile }: { profile: Profile }) {
       {/* Canais */}
       <aside className="flex w-60 shrink-0 flex-col border-r border-void-800 bg-void-900">
         <header className="flex h-12 items-center border-b border-void-800 px-4">
-          <h2 className="truncate text-sm font-bold text-ink-100">
+          <h2 className="flex-1 truncate text-sm font-bold text-ink-100">
             {currentServer?.name ?? 'Nenhum servidor'}
           </h2>
+          {currentServer && (
+            <button
+              onClick={criarConvite}
+              title="Gerar convite"
+              className="rounded p-1 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
+            >
+              <Share2 className="h-4 w-4" />
+            </button>
+          )}
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-2">
@@ -220,12 +284,26 @@ export function AppPage({ profile }: { profile: Profile }) {
                 onAdd={() => createChannel('VOICE')}
                 items={voiceChannels}
                 icon={<Volume2 className="h-4 w-4" />}
-                activeId={null}
-                onSelect={() => undefined}
+                activeId={call.state.channelId}
+                onSelect={(id) => {
+                  const canal = voiceChannels.find((c) => c.id === id);
+                  if (!canal) return;
+                  if (call.state.channelId === id) void call.leave();
+                  else void call.join(id, canal.name, profile.publicKey);
+                }}
               />
             </>
           )}
         </div>
+
+        <CallPanel
+          state={call.state}
+          selfName={profile.displayName}
+          selfKey={profile.publicKey}
+          onLeave={() => void call.leave()}
+          onToggleMute={call.toggleMute}
+          onToggleDeafen={call.toggleDeafen}
+        />
 
         <footer className="flex items-center gap-2 border-t border-void-800 bg-void-850 p-2">
           <Avatar name={profile.displayName} userKey={profile.publicKey} size={32} />

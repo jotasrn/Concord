@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Identity } from './identity/keystore';
 import { toHex } from './identity/keypair';
+import { decodeInvite, encodeInvite, generateServerKey } from './crypto/serverKey';
 import {
   Db,
   currentLamport,
+  getServerKey,
+  listServerKeys,
+  saveServerKey,
   getOperations,
   insertOperation,
   nextSeq,
@@ -108,8 +112,39 @@ export class ConcordStore {
 
   // ---------- comandos ----------
 
+  // ---------- chaves e convites ----------
+
+  /** Chave simetrica do servidor, ou null se nao participamos dele. */
+  serverKey(serverId: string): Buffer | null {
+    return getServerKey(this.db, serverId);
+  }
+
+  knownServerKeys(): { serverId: string; key: Buffer }[] {
+    return listServerKeys(this.db);
+  }
+
+  /** Codigo para dar a um amigo. Ele consegue ler o historico com isso. */
+  createInvite(serverId: string): string {
+    const key = getServerKey(this.db, serverId);
+    if (!key) throw new Error('Servidor desconhecido');
+    return encodeInvite(serverId, key);
+  }
+
+  /**
+   * Guarda a chave vinda de um convite. Da acesso de LEITURA; escrever ainda
+   * depende do dono publicar um member.join com a nossa chave publica.
+   */
+  acceptInvite(code: string): string {
+    const invite = decodeInvite(code);
+    if (!invite) throw new Error('Codigo de convite invalido');
+    saveServerKey(this.db, invite.serverId, invite.serverKey);
+    return invite.serverId;
+  }
+
   createServer(name: string, icon: string | null = null): string {
     const serverId = randomUUID();
+    // A chave nasce junto com o servidor e define o topico da DHT.
+    saveServerKey(this.db, serverId, generateServerKey());
     this.commit('server.create', serverId, {
       serverId,
       name,

@@ -7,7 +7,7 @@
  * seguinte quebra por falta de electron/typescript/vite. Isolando o app em
  * staging, esse install acontece numa arvore propria e descartavel.
  */
-const { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } = require('node:fs');
+const { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const { join } = require('node:path');
 
@@ -27,6 +27,37 @@ function requireBuilt(path, hint) {
 requireBuilt(join(desktopDir, 'dist', 'main', 'index.js'), 'npm run build --workspace=apps/desktop');
 requireBuilt(join(desktopDir, 'dist', 'renderer', 'index.html'), 'npm run build --workspace=apps/web');
 requireBuilt(join(repoRoot, 'packages', 'core', 'dist', 'index.js'), 'npm run build --workspace=packages/core');
+
+/**
+ * Recusa empacotar artefatos mais velhos que o codigo-fonte.
+ *
+ * Sem esta checagem, um `npm run build` que falha no typecheck deixa o dist
+ * anterior no lugar e o instalador sai com codigo defasado - sem nenhum aviso.
+ */
+function assertFresh(built, sourceDir) {
+  const buildTime = statSync(built).mtimeMs;
+  const newest = newestMtime(sourceDir);
+  if (newest > buildTime) {
+    console.error(
+      `Artefato desatualizado: ${built}\n` +
+        `  Codigo-fonte em ${sourceDir} e mais recente. Rode o build e confirme que ele passou.`,
+    );
+    process.exit(1);
+  }
+}
+
+function newestMtime(dir) {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    const mtime = entry.isDirectory() ? newestMtime(full) : statSync(full).mtimeMs;
+    if (mtime > newest) newest = mtime;
+  }
+  return newest;
+}
+
+assertFresh(join(desktopDir, 'dist', 'main', 'index.js'), join(desktopDir, 'src'));
+assertFresh(join(repoRoot, 'packages', 'core', 'dist', 'index.js'), join(repoRoot, 'packages', 'core', 'src'));
 
 rmSync(staging, { recursive: true, force: true });
 mkdirSync(staging, { recursive: true });

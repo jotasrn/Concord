@@ -24,6 +24,7 @@ export class Session {
   constructor(
     private readonly dataDir: string,
     private readonly onOpsReceived: (serverId: string) => void,
+    private readonly onVoiceSignal: (serverId: string, signal: unknown) => void = () => {},
   ) {
     if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
   }
@@ -75,6 +76,7 @@ export class Session {
     this.store = new ConcordStore(this.dbPath, identity);
     this.node = new P2PNode(this.store);
     this.node.on('ops:received', ({ serverId }) => this.onOpsReceived(serverId));
+    this.node.on('voice:signal', ({ serverId, signal }) => this.onVoiceSignal(serverId, signal));
     await this.node.start();
 
     return identity;
@@ -106,6 +108,20 @@ export class Session {
       this.node.broadcast(serverId, novas);
     }
     return result;
+  }
+
+  sendVoiceSignal(serverId: string, signal: any): void {
+    this.requireNode().sendVoiceSignal(serverId, signal);
+  }
+
+  createInvite(serverId: string): string {
+    return this.requireStore().createInvite(serverId);
+  }
+
+  async acceptInvite(code: string): Promise<string> {
+    const serverId = this.requireStore().acceptInvite(code);
+    await this.requireNode().joinServer(serverId);
+    return serverId;
   }
 
   profile(): { displayName: string; publicKey: string; handle: string } {

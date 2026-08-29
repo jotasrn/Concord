@@ -46,7 +46,7 @@ test('operationsMissingFor manda so o delta', () => {
 
 test('o decoder remonta mensagens quebradas entre chunks TCP', () => {
   const decoder = new FrameDecoder();
-  const frame = encodeFrame({ t: 'hello', servers: ['a', 'b'] });
+  const frame = encodeFrame({ t: 'hello', servers: ['a', 'b'], me: 'chave-do-peer' });
 
   // Simula o stream cortando o frame no meio.
   const meio = Math.floor(frame.length / 2);
@@ -54,13 +54,13 @@ test('o decoder remonta mensagens quebradas entre chunks TCP', () => {
 
   const mensagens = decoder.push(frame.subarray(meio));
   assert.equal(mensagens.length, 1);
-  assert.deepEqual(mensagens[0], { t: 'hello', servers: ['a', 'b'] });
+  assert.deepEqual(mensagens[0], { t: 'hello', servers: ['a', 'b'], me: 'chave-do-peer' });
 });
 
 test('o decoder separa varias mensagens que chegam juntas', () => {
   const decoder = new FrameDecoder();
   const juntas = Buffer.concat([
-    encodeFrame({ t: 'hello', servers: ['a'] }),
+    encodeFrame({ t: 'hello', servers: ['a'], me: 'chave-do-peer' }),
     encodeFrame({ t: 'have', serverId: 'a', heads: { k: 3 } }),
   ]);
   assert.equal(decoder.push(juntas).length, 2);
@@ -70,7 +70,7 @@ test('linha corrompida nao derruba o decoder', () => {
   const decoder = new FrameDecoder();
   const chunk = Buffer.concat([
     Buffer.from('{lixo nao json}\n'),
-    encodeFrame({ t: 'hello', servers: ['a'] }),
+    encodeFrame({ t: 'hello', servers: ['a'], me: 'chave-do-peer' }),
   ]);
   const mensagens = decoder.push(chunk);
   assert.equal(mensagens.length, 1);

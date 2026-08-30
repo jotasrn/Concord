@@ -26,6 +26,12 @@ export interface AudioEngineOptions {
   eqPreset?: EqPreset;
   noiseSuppressionKind?: string;
   vad?: Partial<VadOptions>;
+  /**
+   * Desliga o compressor. Ele adiciona lookahead no Chromium, e em modo de
+   * latencia minima esses milissegundos importam mais que a uniformidade de
+   * volume.
+   */
+  useCompressor?: boolean;
 }
 
 /**
@@ -61,6 +67,7 @@ export class AudioEngine {
   private transmitMode: TransmitMode = 'voice-activity';
   private eqPreset: EqPreset = 'voice';
   private noiseSuppressionKind = 'native';
+  private useCompressor = true;
 
   private pttActive = false;
   private rafId: number | null = null;
@@ -72,6 +79,7 @@ export class AudioEngine {
     if (options.transmitMode) this.transmitMode = options.transmitMode;
     if (options.eqPreset) this.eqPreset = options.eqPreset;
     if (options.noiseSuppressionKind) this.noiseSuppressionKind = options.noiseSuppressionKind;
+    if (options.useCompressor !== undefined) this.useCompressor = options.useCompressor;
     this.vad.setOptions({ ...DEFAULT_VAD_OPTIONS, ...options.vad });
   }
 
@@ -85,6 +93,16 @@ export class AudioEngine {
 
   isRunning(): boolean {
     return this.context !== null;
+  }
+
+  /** Latencia introduzida pelo proprio grafo de audio, em ms. */
+  getGraphLatencyMs(): number | null {
+    if (!this.context) return null;
+    const base = this.context.baseLatency * 1000;
+    const saida = (this.context.outputLatency ?? 0) * 1000;
+    // O compressor do Chromium adianta o sinal para reagir a transientes.
+    const compressor = this.useCompressor ? 6 : 0;
+    return base + saida + compressor;
   }
 
   /** Constraints efetivamente entregues pelo navegador, para diagnostico. */
@@ -138,12 +156,17 @@ export class AudioEngine {
 
     head = head.connect(this.highPass);
     head.connect(this.equalizer.input);
-    this.equalizer.output.connect(this.compressor);
+
+    // O compressor entra na cadeia so quando pedido: ele custa alguns
+    // milissegundos de lookahead.
+    const saida: AudioNode = this.useCompressor
+      ? (this.equalizer.output.connect(this.compressor), this.compressor)
+      : this.equalizer.output;
 
     // Ramo de analise: antes do gate, para medir mesmo mutado.
-    this.compressor.connect(this.meter.node);
+    saida.connect(this.meter.node);
 
-    this.compressor.connect(this.transmitGain);
+    saida.connect(this.transmitGain);
     this.transmitGain.connect(this.destination);
 
     if (context.state === 'suspended') await context.resume();

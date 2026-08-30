@@ -4,6 +4,7 @@ import { Avatar, Button, ErrorBanner, Input } from '../components/ui';
 import { AudioSettingsPanel } from '../features/voice/AudioSettingsPanel';
 import { PromptModal, PromptRequest } from '../components/PromptModal';
 import { CallPanel } from '../features/voice/CallPanel';
+import { CallStage } from '../features/voice/CallStage';
 import { ScreenViewer } from '../features/screenshare/ScreenViewer';
 import { SourcePicker } from '../features/screenshare/SourcePicker';
 import type { CaptureSource } from '../features/screenshare/ScreenShareEngine';
@@ -25,6 +26,9 @@ export function AppPage({ profile }: { profile: Profile }) {
   const [showSettings, setShowSettings] = useState(false);
   const [prompt, setPrompt] = useState<PromptRequest | null>(null);
   const [picker, setPicker] = useState<'novo' | 'trocar' | null>(null);
+  // Ao entrar numa chamada o palco assume a area principal; a aba deixa voltar
+  // para o chat sem sair da call.
+  const [aba, setAba] = useState<'chat' | 'call'>('chat');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const memberNames = new Map(members.map((m) => [m.userKey, m.displayName]));
@@ -293,8 +297,13 @@ export function AppPage({ profile }: { profile: Profile }) {
                 onSelect={(id) => {
                   const canal = voiceChannels.find((c) => c.id === id);
                   if (!canal) return;
-                  if (call.state.channelId === id) void call.leave();
-                  else void call.join(id, canal.name, profile.publicKey);
+                  if (call.state.channelId === id) {
+                    // Ja esta neste canal: o clique alterna entre palco e chat.
+                    setAba((a) => (a === 'call' ? 'chat' : 'call'));
+                  } else {
+                    void call.join(id, canal.name, profile.publicKey);
+                    setAba('call');
+                  }
                 }}
               />
             </>
@@ -336,14 +345,42 @@ export function AppPage({ profile }: { profile: Profile }) {
 
       {/* Chat */}
       <main className="flex min-w-0 flex-1 flex-col">
+        {aba === 'call' && call.state.channelId ? (
+          <CallStage
+            state={call.state}
+            selfName={profile.displayName}
+            selfKey={profile.publicKey}
+            remoteScreens={call.remoteScreens}
+            onLeave={() => {
+              void call.leave();
+              setAba('chat');
+            }}
+            onToggleMute={call.toggleMute}
+            onToggleDeafen={call.toggleDeafen}
+            onStartScreenShare={() => setPicker('novo')}
+            onStopScreenShare={() => void call.stopScreenShare()}
+            onTogglePause={() => void call.toggleScreenPause()}
+            onSwitchSource={() => setPicker('trocar')}
+          />
+        ) : (
+          <>
         <header className="flex h-12 items-center gap-2 border-b border-void-800 px-4">
           {currentChannel ? (
             <>
               <Hash className="h-4 w-4 text-ink-400" />
-              <h3 className="text-sm font-semibold text-ink-100">{currentChannel.name}</h3>
+              <h3 className="flex-1 text-sm font-semibold text-ink-100">{currentChannel.name}</h3>
             </>
           ) : (
-            <span className="text-sm text-ink-400">Selecione um canal</span>
+            <span className="flex-1 text-sm text-ink-400">Selecione um canal</span>
+          )}
+          {call.state.channelId && (
+            <button
+              onClick={() => setAba('call')}
+              className="flex items-center gap-1.5 rounded-lg bg-violet-600/20 px-3 py-1 text-xs font-semibold text-violet-200 transition hover:bg-violet-600/30"
+            >
+              <Volume2 className="h-3.5 w-3.5" />
+              Voltar para a chamada
+            </button>
           )}
         </header>
 
@@ -393,6 +430,8 @@ export function AppPage({ profile }: { profile: Profile }) {
             </Button>
           </div>
         )}
+          </>
+        )}
       </main>
 
       {/* Membros */}
@@ -441,10 +480,10 @@ export function AppPage({ profile }: { profile: Profile }) {
       )}
 
       {/* Telas compartilhadas pelos peers: overlay flutuante no canto inferior direito */}
-      <ScreenViewer
-        remoteScreens={call.remoteScreens}
-        memberNames={memberNames}
-      />
+      {/* Flutuante so fora do palco: dentro dele as telas ja aparecem na grade. */}
+      {aba !== 'call' && (
+        <ScreenViewer remoteScreens={call.remoteScreens} memberNames={memberNames} />
+      )}
     </div>
   );
 }

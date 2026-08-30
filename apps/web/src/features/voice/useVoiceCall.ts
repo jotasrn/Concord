@@ -3,6 +3,7 @@ import { AudioEngine, AudioEngineState, TransmitMode } from './audio/AudioEngine
 import { sounds } from './audio/SoundEffects';
 import { PeerToPeerTransport } from './transport/PeerToPeerTransport';
 import { ScreenStats, VoiceStats } from './transport/VoiceTransport';
+import { LATENCY_PROFILES, LatencyBreakdown, LatencyProfile } from './transport/lowLatency';
 import { ScreenShareEngine, CaptureInfo, CaptureSource } from '../screenshare/ScreenShareEngine';
 import { ScreenQuality } from '../screenshare/presets';
 
@@ -11,6 +12,7 @@ export interface CallParticipant {
   name: string;
   connection: RTCPeerConnectionState;
   stats: VoiceStats | null;
+  latency: LatencyBreakdown | null;
 }
 
 export interface CallState {
@@ -26,6 +28,10 @@ export interface CallState {
   screenPaused: boolean;
   capture: CaptureInfo | null;
   screenStats: ScreenStats | null;
+  /** Stream da propria tela, para o preview de quem transmite. */
+  localScreen: MediaStream | null;
+  latencyProfile: LatencyProfile['id'];
+  graphLatencyMs: number | null;
 }
 
 const ESTADO_INICIAL: CallState = {
@@ -41,6 +47,9 @@ const ESTADO_INICIAL: CallState = {
   screenPaused: false,
   capture: null,
   screenStats: null,
+  localScreen: null,
+  latencyProfile: 'ultra',
+  graphLatencyMs: null,
 };
 
 /**
@@ -77,6 +86,7 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
           name: nomeDe(key),
           connection: anterior?.connection ?? 'new',
           stats: anterior?.stats ?? null,
+          latency: anterior?.latency ?? null,
         };
       }),
     }));
@@ -151,7 +161,13 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
       setState({ ...ESTADO_INICIAL, channelId, channelName, connecting: true });
 
       try {
-        const engine = new AudioEngine({ transmitMode: 'voice-activity', eqPreset: 'voice' });
+        const perfil = LATENCY_PROFILES.ultra;
+        const engine = new AudioEngine({
+          transmitMode: 'voice-activity',
+          eqPreset: 'voice',
+          useCompressor: perfil.useCompressor,
+          vad: { attackMs: perfil.vadAttackMs },
+        });
         await engine.start();
         engine.subscribe((audio) => setState((s) => ({ ...s, audio })));
         engineRef.current = engine;
@@ -181,16 +197,24 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
                 ...s,
                 participants: s.participants.some((p) => p.key === peerKey)
                   ? s.participants.map((p) => (p.key === peerKey ? { ...p, connection } : p))
-                  : [...s.participants, { key: peerKey, name: nomeDe(peerKey), connection, stats: null }],
+                  : [
+                      ...s.participants,
+                      { key: peerKey, name: nomeDe(peerKey), connection, stats: null, latency: null },
+                    ],
               }));
             },
           },
         );
         transportRef.current = transport;
 
+        transport.setLatencyProfile(perfil);
         await transport.connect(channelId, track);
         sounds.play('join');
-        setState((s) => ({ ...s, connecting: false }));
+        setState((s) => ({
+          ...s,
+          connecting: false,
+          graphLatencyMs: engine.getGraphLatencyMs(),
+        }));
       } catch (error) {
         sounds.play('error');
         await engineRef.current?.stop();
@@ -221,10 +245,14 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
     const id = setInterval(async () => {
       const transport = transportRef.current;
       if (!transport) return;
-      const stats = await transport.getStats();
+      const [stats, latency] = await Promise.all([transport.getStats(), transport.getLatency()]);
       setState((s) => ({
         ...s,
-        participants: s.participants.map((p) => ({ ...p, stats: stats.get(p.key) ?? p.stats })),
+        participants: s.participants.map((p) => ({
+          ...p,
+          stats: stats.get(p.key) ?? p.stats,
+          latency: latency.get(p.key) ?? p.latency,
+        })),
       }));
     }, 2000);
     return () => clearInterval(id);
@@ -276,6 +304,9 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
           screenSharing: true,
           screenPaused: false,
           capture: screenRef.current.getCaptureInfo(),
+          // Preview do proprio compartilhamento: e so a track local, entao nao
+          // custa banda nenhuma.
+          localScreen: new MediaStream([track]),
         }));
 
         // O usuario pode encerrar pela barra do proprio sistema.
@@ -308,6 +339,7 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
       screenPaused: false,
       capture: null,
       screenStats: null,
+      localScreen: null,
     }));
   }, []);
 
@@ -343,7 +375,11 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
       if (audio) await transport.addSystemAudioTrack(audio);
 
       screenRef.current.onEnded(() => void stopScreenShare());
-      setState((s) => ({ ...s, capture: screenRef.current.getCaptureInfo() }));
+      setState((s) => ({
+        ...s,
+        capture: screenRef.current.getCaptureInfo(),
+        localScreen: new MediaStream([track]),
+      }));
     },
     [stopScreenShare],
   );

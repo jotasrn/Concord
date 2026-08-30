@@ -1,4 +1,12 @@
 import { ScreenStats, StatsReader, VoiceStats, VoiceTransport } from './VoiceTransport';
+import {
+  LATENCY_PROFILES,
+  LatencyBreakdown,
+  LatencyProfile,
+  applyOpusLowLatency,
+  readLatency,
+  tuneAllReceivers,
+} from './lowLatency';
 
 export interface VideoEncodingOptions {
   maxBitrate: number;
@@ -49,6 +57,7 @@ export class PeerToPeerTransport implements VoiceTransport {
   private localVideoTrack: MediaStreamTrack | null = null;
   private systemAudioTrack: MediaStreamTrack | null = null;
   private videoOptions: VideoEncodingOptions | null = null;
+  private latency: LatencyProfile = LATENCY_PROFILES.ultra;
   private channelId: string | null = null;
 
   constructor(
@@ -95,6 +104,9 @@ export class PeerToPeerTransport implements VoiceTransport {
       for (const track of event.streams[0]?.getTracks() ?? [event.track]) {
         if (!stream.getTracks().includes(track)) stream.addTrack(track);
       }
+      // Receptores so existem depois da midia chegar; e aqui que o alvo do
+      // jitter buffer pode ser aplicado.
+      tuneAllReceivers(pc, this.latency.jitterTarget);
       this.events.onStream(peerKey, stream);
     };
 
@@ -112,7 +124,9 @@ export class PeerToPeerTransport implements VoiceTransport {
       if (!this.channelId) return;
       try {
         entry.makingOffer = true;
-        await pc.setLocalDescription();
+        const offer = await pc.createOffer();
+        offer.sdp = this.tuneSdp(offer.sdp);
+        await pc.setLocalDescription(offer);
         this.send({
           kind: 'offer',
           to: peerKey,
@@ -167,7 +181,9 @@ export class PeerToPeerTransport implements VoiceTransport {
 
         await entry.pc.setRemoteDescription(description);
         await this.flushCandidates(entry);
-        await entry.pc.setLocalDescription();
+        const answer = await entry.pc.createAnswer();
+        answer.sdp = this.tuneSdp(answer.sdp);
+        await entry.pc.setLocalDescription(answer);
         this.send({
           kind: 'answer',
           to: signal.from,
@@ -383,6 +399,31 @@ export class PeerToPeerTransport implements VoiceTransport {
     this.localTrack = null;
     this.localVideoTrack = null;
     this.systemAudioTrack = null;
+  }
+
+  /** Ajusta o perfil de latencia em todas as conexoes ativas. */
+  setLatencyProfile(profile: LatencyProfile): void {
+    this.latency = profile;
+    for (const entry of this.peers.values()) {
+      tuneAllReceivers(entry.pc, profile.jitterTarget);
+    }
+  }
+
+  getLatencyProfile(): LatencyProfile {
+    return this.latency;
+  }
+
+  private tuneSdp(sdp: string | undefined): string | undefined {
+    return sdp ? applyOpusLowLatency(sdp, this.latency.ptime) : sdp;
+  }
+
+  /** Latencia medida por peer, a partir do relatorio do WebRTC. */
+  async getLatency(): Promise<Map<string, LatencyBreakdown>> {
+    const resultado = new Map<string, LatencyBreakdown>();
+    for (const [key, entry] of this.peers) {
+      resultado.set(key, readLatency(await entry.pc.getStats()));
+    }
+    return resultado;
   }
 
   peerKeys(): string[] {

@@ -13,6 +13,9 @@ import {
 
 export type TransmitMode = 'voice-activity' | 'push-to-talk' | 'always-on';
 
+/** ~30 Hz: resolucao suficiente para o VAD reagir sem pesar na CPU. */
+const LOOP_INTERVAL_MS = 33;
+
 export interface AudioEngineState {
   levels: AudioLevels;
   voiceState: VoiceState;
@@ -70,7 +73,7 @@ export class AudioEngine {
   private useCompressor = true;
 
   private pttActive = false;
-  private rafId: number | null = null;
+  private loopTimer: ReturnType<typeof setInterval> | null = null;
   private listeners = new Set<(state: AudioEngineState) => void>();
   private lastState: AudioEngineState | null = null;
 
@@ -170,6 +173,12 @@ export class AudioEngine {
     this.transmitGain.connect(this.destination);
 
     if (context.state === 'suspended') await context.resume();
+
+    // Intervalo em vez de requestAnimationFrame: o Chromium congela o rAF
+    // quando a janela esta minimizada ou oculta, o que travaria o gate de
+    // transmissao no meio de uma chamada. 30 Hz e de sobra para medidor e VAD,
+    // e gasta menos CPU que os 60 Hz do rAF.
+    this.loopTimer = setInterval(this.loop, LOOP_INTERVAL_MS);
     this.loop();
   }
 
@@ -205,7 +214,6 @@ export class AudioEngine {
     this.lastState = state;
     for (const listener of this.listeners) listener(state);
 
-    this.rafId = requestAnimationFrame(this.loop);
   };
 
   private shouldTransmit(voiceState: VoiceState): boolean {
@@ -306,8 +314,8 @@ export class AudioEngine {
   }
 
   async stop(): Promise<void> {
-    if (this.rafId !== null) cancelAnimationFrame(this.rafId);
-    this.rafId = null;
+    if (this.loopTimer !== null) clearInterval(this.loopTimer);
+    this.loopTimer = null;
 
     this.noiseSuppression?.destroy();
     this.rawStream?.getTracks().forEach((t) => t.stop());

@@ -90,6 +90,35 @@ const api = {
       return () => ipcRenderer.removeListener('voice:incoming', listener);
     },
   },
+  settings: {
+    get: () =>
+      call<{
+        settings: {
+          resources: {
+            maxHeapMb: number | null;
+            maxCores: number | null;
+            maxStorageMb: number | null;
+            runInBackground: boolean;
+            startWithSystem: boolean;
+          };
+          video: {
+            cameraDeviceId: string | null;
+            cameraHeight: number;
+            cameraFrameRate: number;
+            screenPresetId: string;
+          };
+        };
+        machine: { cores: number; totalMemoryMb: number };
+      }>('settings:get'),
+    save: (settings: unknown) => call<boolean>('settings:save', settings),
+    usage: () =>
+      call<{ operations: number; messages: number; avatarBytes: number; diskBytes: number }>(
+        'settings:usage',
+      ),
+    prune: (olderThanDays: number) =>
+      call<{ removed: number }>('settings:prune', olderThanDays),
+    setCallActive: (active: boolean) => call<boolean>('settings:callActive', active),
+  },
   profile: {
     update: (profile: { displayName: string; avatar: string | null; bio: string | null }) =>
       call<boolean>('profile:update', profile),

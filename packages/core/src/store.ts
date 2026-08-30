@@ -288,6 +288,50 @@ export class ConcordStore {
     this.commit('message.delete', serverId, { messageId });
   }
 
+  // ---------- armazenamento ----------
+
+  /** Quanto o historico local esta ocupando, em numeros que a UI mostra. */
+  storageUsage(): { operations: number; messages: number; avatarBytes: number } {
+    const conta = (sql: string) =>
+      Number((this.db.prepare(sql).get() as { n: number }).n ?? 0);
+
+    return {
+      operations: conta('SELECT COUNT(*) AS n FROM ops'),
+      messages: conta('SELECT COUNT(*) AS n FROM messages WHERE deleted = 0'),
+      avatarBytes: conta("SELECT COALESCE(SUM(LENGTH(avatar)), 0) AS n FROM users"),
+    };
+  }
+
+  /**
+   * Remove mensagens antigas do log local.
+   *
+   * Apaga SO operacoes de mensagem. Estruturais (criacao de servidor, canais,
+   * membros, papeis) precisam continuar, senao a projecao perderia canais e
+   * permissoes ao ser reconstruida.
+   *
+   * Nao volta pela rede porque a sincronizacao compara o maior seq de cada
+   * autor, e esse topo continua intacto: os peers concluem que ja temos tudo.
+   * Em compensacao, o que for podado aqui so reaparece se este dispositivo for
+   * reinstalado do zero.
+   */
+  pruneHistory(olderThanDays: number): { removed: number } {
+    const limite = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
+
+    const resultado = this.db
+      .prepare(
+        `DELETE FROM ops
+         WHERE type IN ('message.create', 'message.edit', 'message.delete')
+           AND timestamp < ?`,
+      )
+      .run(limite);
+
+    if (resultado.changes > 0) {
+      rebuildProjection(this.db, this.vault);
+      this.db.exec('VACUUM');
+    }
+    return { removed: resultado.changes };
+  }
+
   // ---------- consultas ----------
 
   listServers(): ServerView[] {

@@ -5,9 +5,22 @@ import { fatal, log } from './diagnostics';
 import { join } from 'node:path';
 import { BrowserWindow, app, nativeImage, session as electronSession, shell } from 'electron';
 import { registerIpc } from './ipc';
+import { destroyTray, isQuitting, markQuitting, setCallActive, setupTray } from './background';
+import { applyCoreLimit, machineResources, readSettings, settingsPath } from './settings';
 import type { Session as SessionType } from './session';
 
 const isDev = !app.isPackaged;
+
+/**
+ * Preferencias sao lidas antes de qualquer coisa: o teto de heap so tem efeito
+ * como flag do V8, e flags precisam ser registradas antes do app ficar pronto.
+ */
+const settings = readSettings(settingsPath(app.getPath('userData')));
+
+if (settings.resources.maxHeapMb) {
+  app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${settings.resources.maxHeapMb}`);
+}
+applyCoreLimit(settings.resources.maxCores);
 let window: BrowserWindow | null = null;
 let appSession: SessionType | null = null;
 
@@ -53,7 +66,18 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // O Chromium reduz timers de janelas ocultas. Numa chamada isso cortaria
+      // audio ao minimizar, entao o throttling fica desligado.
+      backgroundThrottling: false,
     },
+  });
+
+  // Fechar esconde na bandeja quando o modo segundo plano esta ligado.
+  window.on('close', (event) => {
+    if (!isQuitting() && settings.resources.runInBackground) {
+      event.preventDefault();
+      window?.hide();
+    }
   });
 
   window.once('ready-to-show', () => {
@@ -133,8 +157,9 @@ if (!app.requestSingleInstanceLock()) {
     try {
       log('info', 'app pronto, iniciando sessao');
       appSession = createSession();
-      registerIpc(appSession, () => window);
+      registerIpc(appSession, () => window, app.getPath('userData'), setCallActive);
       createWindow();
+      setupTray(() => window);
     } catch (error) {
       fatal(error);
       return;
@@ -146,10 +171,17 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+    // Com "rodar em segundo plano" ligado, fechar a janela nao encerra: a
+    // sincronizacao P2P e as chamadas continuam pela bandeja.
+    if (process.platform !== 'darwin' && !settings.resources.runInBackground) {
+      app.quit();
+    }
   });
 
   app.on('before-quit', () => {
+    markQuitting();
+    setCallActive(false);
+    destroyTray();
     void appSession?.shutdown();
   });
 }

@@ -46,6 +46,38 @@ export interface PeerPresence {
   voice: string | null;
 }
 
+export interface ResourceSettings {
+  maxHeapMb: number | null;
+  maxCores: number | null;
+  maxStorageMb: number | null;
+  runInBackground: boolean;
+  startWithSystem: boolean;
+}
+
+export interface VideoSettings {
+  cameraDeviceId: string | null;
+  cameraHeight: number;
+  cameraFrameRate: number;
+  screenPresetId: string;
+}
+
+export interface AppSettings {
+  resources: ResourceSettings;
+  video: VideoSettings;
+}
+
+export interface MachineResources {
+  cores: number;
+  totalMemoryMb: number;
+}
+
+export interface StorageUsage {
+  operations: number;
+  messages: number;
+  avatarBytes: number;
+  diskBytes: number;
+}
+
 export interface UserProfile {
   userKey: string;
   displayName: string;
@@ -89,6 +121,13 @@ export interface ConcordApi {
   voice: {
     signal(serverId: string, signal: unknown): Promise<boolean>;
     onSignal(handler: (serverId: string, signal: any) => void): () => void;
+  };
+  settings: {
+    get(): Promise<{ settings: AppSettings; machine: MachineResources }>;
+    save(settings: AppSettings): Promise<boolean>;
+    usage(): Promise<StorageUsage>;
+    prune(olderThanDays: number): Promise<{ removed: number }>;
+    setCallActive(active: boolean): Promise<boolean>;
   };
   profile: {
     update(profile: { displayName: string; avatar: string | null; bio: string | null }): Promise<boolean>;

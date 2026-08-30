@@ -194,6 +194,14 @@ export class Session {
     };
   }
 
+  storageUsage() {
+    return this.requireStore().storageUsage();
+  }
+
+  pruneHistory(olderThanDays: number) {
+    return this.requireStore().pruneHistory(olderThanDays);
+  }
+
   peerCount(): number {
     return this.node?.peerCount() ?? 0;
   }

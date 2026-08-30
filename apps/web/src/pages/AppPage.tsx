@@ -7,6 +7,8 @@ import { CallPanel } from '../features/voice/CallPanel';
 import { CallStage } from '../features/voice/CallStage';
 import { ProfilePanel } from '../features/profile/ProfilePanel';
 import { StatusPicker } from '../features/profile/StatusPicker';
+import { ResourcesPanel } from '../features/settings/ResourcesPanel';
+import { VideoPanel } from '../features/settings/VideoPanel';
 import { ScreenViewer } from '../features/screenshare/ScreenViewer';
 import { SourcePicker } from '../features/screenshare/SourcePicker';
 import type { CaptureSource } from '../features/screenshare/ScreenShareEngine';
@@ -685,6 +687,13 @@ function ChannelGroup({
   );
 }
 
+const ROTULOS_ABA = {
+  perfil: 'Meu perfil',
+  audio: 'Voz',
+  video: 'Video',
+  recursos: 'Recursos',
+} as const;
+
 function SettingsModal({
   profile,
   status,
@@ -696,13 +705,13 @@ function SettingsModal({
   onClose: () => void;
   onProfileSaved: (displayName: string) => void;
 }) {
-  const [tab, setTab] = useState<'perfil' | 'audio'>('perfil');
+  const [tab, setTab] = useState<'perfil' | 'audio' | 'video' | 'recursos'>('perfil');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
       <div className="panel flex h-[640px] w-full max-w-3xl overflow-hidden">
         <nav className="w-44 shrink-0 space-y-1 border-r border-void-700 bg-void-850 p-3">
-          {(['perfil', 'audio'] as const).map((t) => (
+          {(['perfil', 'audio', 'video', 'recursos'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -710,7 +719,7 @@ function SettingsModal({
                 tab === t ? 'bg-violet-600/20 text-violet-200' : 'text-ink-300 hover:bg-void-700'
               }`}
             >
-              {t === 'perfil' ? 'Meu perfil' : 'Voz e video'}
+              {ROTULOS_ABA[t]}
             </button>
           ))}
           <button
@@ -726,6 +735,8 @@ function SettingsModal({
             <ProfilePanel profile={profile} status={status} onSaved={onProfileSaved} />
           )}
           {tab === 'audio' && <AudioSettingsPanel />}
+          {tab === 'video' && <VideoPanel />}
+          {tab === 'recursos' && <ResourcesPanel />}
         </div>
       </div>
     </div>

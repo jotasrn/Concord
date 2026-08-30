@@ -18,7 +18,12 @@ function wrap<T>(fn: () => T | Promise<T>): Promise<Reply<T>> {
     }));
 }
 
-export function registerIpc(session: Session, getWindow: () => BrowserWindow | null): void {
+export function registerIpc(
+  session: Session,
+  getWindow: () => BrowserWindow | null,
+  userData: string,
+  onCallActive: (active: boolean) => void,
+): void {
   // ---------- conta ----------
 
   ipcMain.handle('account:status', () =>
@@ -145,6 +150,7 @@ export function registerIpc(session: Session, getWindow: () => BrowserWindow | n
   registerVoiceAndInviteIpc(session);
   registerScreenIpc();
   registerProfileIpc(session);
+  registerSettingsIpc(session, userData, onCallActive);
   void getWindow;
 }
 
@@ -240,6 +246,67 @@ export function registerProfileIpc(session: Session): void {
   ipcMain.handle('presence:voice', (_e, channelId: string | null) =>
     wrap(() => {
       session.setVoiceChannel(channelId);
+      return true;
+    }),
+  );
+}
+
+/** Configuracoes de recursos: memoria, nucleos, armazenamento e segundo plano. */
+export function registerSettingsIpc(
+  session: Session,
+  userData: string,
+  onCallActive: (active: boolean) => void,
+): void {
+  const { statSync, existsSync } = require('node:fs') as typeof import('node:fs');
+  const { join } = require('node:path') as typeof import('node:path');
+  const settingsModule = require('./settings') as typeof import('./settings');
+  const { app } = require('electron') as typeof import('electron');
+
+  const caminho = settingsModule.settingsPath(userData);
+
+  ipcMain.handle('settings:get', () =>
+    wrap(() => ({
+      settings: settingsModule.readSettings(caminho),
+      machine: settingsModule.machineResources(),
+    })),
+  );
+
+  ipcMain.handle('settings:save', (_e, settings: import('./settings').AppSettings) =>
+    wrap(() => {
+      settingsModule.writeSettings(caminho, settings);
+
+      // Nucleos valem na hora; o teto de heap so na proxima abertura, porque
+      // e uma flag do V8 registrada antes do app iniciar.
+      settingsModule.applyCoreLimit(settings.resources.maxCores);
+      app.setLoginItemSettings({ openAtLogin: settings.resources.startWithSystem });
+
+      return true;
+    }),
+  );
+
+  /** Uso real em disco, somando o banco e os arquivos auxiliares do SQLite. */
+  ipcMain.handle('settings:usage', () =>
+    wrap(() => {
+      const dir = join(userData, 'data');
+      const tamanho = (arquivo: string) => {
+        const alvo = join(dir, arquivo);
+        return existsSync(alvo) ? statSync(alvo).size : 0;
+      };
+      // O WAL pode ficar maior que o proprio banco antes do checkpoint, entao
+      // ignora-lo daria um numero enganosamente baixo.
+      const bytes = tamanho('concord.db') + tamanho('concord.db-wal') + tamanho('concord.db-shm');
+
+      return { ...session.storageUsage(), diskBytes: bytes };
+    }),
+  );
+
+  ipcMain.handle('settings:prune', (_e, olderThanDays: number) =>
+    wrap(() => session.pruneHistory(olderThanDays)),
+  );
+
+  ipcMain.handle('settings:callActive', (_e, active: boolean) =>
+    wrap(() => {
+      onCallActive(active);
       return true;
     }),
   );

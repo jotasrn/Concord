@@ -153,6 +153,7 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
     for (const key of [...audioElements.current.keys()]) desanexarAudio(key);
     videoElements.current.clear();
     void window.concord.presence.setVoiceChannel(null).catch(() => undefined);
+    void window.concord.settings.setCallActive(false).catch(() => undefined);
     sounds.play('leave');
     setState(ESTADO_INICIAL);
   }, [desanexarAudio]);
@@ -215,6 +216,8 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
         await transport.connect(channelId, track);
         sounds.play('join');
         void window.concord.presence.setVoiceChannel(channelId).catch(() => undefined);
+        // Impede o Windows de suspender no meio da chamada.
+        void window.concord.settings.setCallActive(true).catch(() => undefined);
         setState((s) => ({
           ...s,
           connecting: false,

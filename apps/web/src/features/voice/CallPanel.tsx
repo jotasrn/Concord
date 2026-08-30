@@ -1,6 +1,7 @@
-import { Headphones, HeadphoneOff, Mic, MicOff, PhoneOff, Signal, Volume2 } from 'lucide-react';
+import { Headphones, HeadphoneOff, Mic, MicOff, Monitor, MonitorOff, PhoneOff, Signal, Volume2 } from 'lucide-react';
 import { Avatar } from '../../components/ui';
 import { CallState } from './useVoiceCall';
+import { ShareControls } from '../screenshare/ShareControls';
 
 const CORES_QUALIDADE: Record<string, string> = {
   excelente: 'text-status-online',
@@ -14,16 +15,26 @@ export function CallPanel({
   state,
   selfName,
   selfKey,
+  remoteScreens,
   onLeave,
   onToggleMute,
   onToggleDeafen,
+  onStartScreenShare,
+  onStopScreenShare,
+  onTogglePause,
+  onSwitchSource,
 }: {
   state: CallState;
   selfName: string;
   selfKey: string;
+  remoteScreens: Map<string, MediaStream>;
   onLeave: () => void;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
+  onStartScreenShare: () => void;
+  onStopScreenShare: () => void;
+  onTogglePause: () => void;
+  onSwitchSource: () => void;
 }) {
   if (!state.channelId) return null;
 
@@ -37,6 +48,12 @@ export function CallPanel({
           {state.channelName}
         </span>
         {state.connecting && <span className="text-[10px] text-ink-400">conectando...</span>}
+        {state.screenSharing && (
+          <span className="ml-auto flex items-center gap-1 rounded bg-violet-600/30 px-1.5 py-0.5 text-[10px] font-semibold text-violet-300">
+            <Monitor className="h-2.5 w-2.5" />
+            ao vivo
+          </span>
+        )}
       </header>
 
       {state.error && (
@@ -55,6 +72,11 @@ export function CallPanel({
             )}
           </div>
           <span className="flex-1 truncate text-xs text-ink-200">{selfName}</span>
+          {state.screenSharing && (
+            <span title="Compartilhando tela">
+              <Monitor className="h-3 w-3 text-violet-400" />
+            </span>
+          )}
           {state.muted && <MicOff className="h-3 w-3 text-status-dnd" />}
         </div>
 
@@ -63,6 +85,11 @@ export function CallPanel({
           <div key={p.key} className="flex items-center gap-2">
             <Avatar name={p.name} userKey={p.key} size={26} />
             <span className="flex-1 truncate text-xs text-ink-200">{p.name}</span>
+            {remoteScreens.has(p.key) && (
+              <span title="Compartilhando tela">
+                <Monitor className="h-3 w-3 text-violet-400" />
+              </span>
+            )}
             {p.stats && (
               <span
                 title={[
@@ -126,6 +153,21 @@ export function CallPanel({
           )}
         </button>
         <button
+          onClick={state.screenSharing ? onStopScreenShare : onStartScreenShare}
+          title={state.screenSharing ? 'Parar compartilhamento' : 'Compartilhar tela'}
+          className={`flex-1 rounded p-1.5 transition ${
+            state.screenSharing
+              ? 'bg-violet-600/30 text-violet-300 hover:bg-status-dnd/20 hover:text-status-dnd'
+              : 'text-ink-300 hover:bg-void-700 hover:text-violet-400'
+          }`}
+        >
+          {state.screenSharing ? (
+            <MonitorOff className="mx-auto h-4 w-4" />
+          ) : (
+            <Monitor className="mx-auto h-4 w-4" />
+          )}
+        </button>
+        <button
           onClick={onLeave}
           title="Sair da chamada"
           className="flex-1 rounded bg-status-dnd/15 p-1.5 text-status-dnd transition hover:bg-status-dnd/30"
@@ -133,6 +175,16 @@ export function CallPanel({
           <PhoneOff className="mx-auto h-4 w-4" />
         </button>
       </div>
+
+      {state.screenSharing && (
+        <ShareControls
+          capture={state.capture}
+          stats={state.screenStats}
+          paused={state.screenPaused}
+          onTogglePause={onTogglePause}
+          onSwitchSource={onSwitchSource}
+        />
+      )}
     </section>
   );
 }

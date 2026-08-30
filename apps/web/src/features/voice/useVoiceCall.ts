@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AudioEngine, AudioEngineState, TransmitMode } from './audio/AudioEngine';
 import { sounds } from './audio/SoundEffects';
 import { PeerToPeerTransport } from './transport/PeerToPeerTransport';
-import { VoiceStats } from './transport/VoiceTransport';
+import { ScreenStats, VoiceStats } from './transport/VoiceTransport';
+import { ScreenShareEngine, CaptureInfo, CaptureSource } from '../screenshare/ScreenShareEngine';
+import { ScreenQuality } from '../screenshare/presets';
 
 export interface CallParticipant {
   key: string;
@@ -20,6 +22,10 @@ export interface CallState {
   participants: CallParticipant[];
   audio: AudioEngineState | null;
   error: string | null;
+  screenSharing: boolean;
+  screenPaused: boolean;
+  capture: CaptureInfo | null;
+  screenStats: ScreenStats | null;
 }
 
 const ESTADO_INICIAL: CallState = {
@@ -31,6 +37,10 @@ const ESTADO_INICIAL: CallState = {
   participants: [],
   audio: null,
   error: null,
+  screenSharing: false,
+  screenPaused: false,
+  capture: null,
+  screenStats: null,
 };
 
 /**
@@ -45,6 +55,8 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
   const engineRef = useRef<AudioEngine | null>(null);
   const transportRef = useRef<PeerToPeerTransport | null>(null);
   const audioElements = useRef(new Map<string, HTMLAudioElement>());
+  const videoElements = useRef(new Map<string, MediaStream>());
+  const screenRef = useRef(new ScreenShareEngine());
   const serverIdRef = useRef(serverId);
   serverIdRef.current = serverId;
 
@@ -81,20 +93,52 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
     void element.play().catch(() => undefined);
   }, []);
 
+  /**
+   * Separa tracks de audio e video do stream remoto.
+   * Audio vai para elementos <audio> (invisíveis); video e guardado no Map
+   * de streams para renderizar no ScreenShareOverlay.
+   */
+  const anexarStream = useCallback((peerKey: string, stream: MediaStream) => {
+    const audioTracks = stream.getAudioTracks();
+    const videoTracks = stream.getVideoTracks();
+
+    if (audioTracks.length > 0) {
+      let element = audioElements.current.get(peerKey);
+      if (!element) {
+        element = new Audio();
+        element.autoplay = true;
+        audioElements.current.set(peerKey, element);
+      }
+      element.srcObject = stream;
+      void element.play().catch(() => undefined);
+    }
+
+    if (videoTracks.length > 0) {
+      videoElements.current.set(peerKey, stream);
+      // Forca re-render para atualizar remoteScreens.
+      setState((s) => ({ ...s }));
+    }
+  }, []);
+
   const desanexarAudio = useCallback((peerKey: string) => {
     const element = audioElements.current.get(peerKey);
     if (element) {
       element.srcObject = null;
       audioElements.current.delete(peerKey);
     }
+    videoElements.current.delete(peerKey);
+    setState((s) => ({ ...s }));
   }, []);
 
   const leave = useCallback(async () => {
+    // Para o screen share antes de sair.
+    await screenRef.current.stop();
     await transportRef.current?.disconnect();
     await engineRef.current?.stop();
     transportRef.current = null;
     engineRef.current = null;
     for (const key of [...audioElements.current.keys()]) desanexarAudio(key);
+    videoElements.current.clear();
     sounds.play('leave');
     setState(ESTADO_INICIAL);
   }, [desanexarAudio]);
@@ -123,7 +167,7 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
           },
           {
             onStream: (peerKey, stream) => {
-              anexarAudio(peerKey, stream);
+              anexarStream(peerKey, stream);
               atualizarParticipantes();
             },
             onPeerLeft: (peerKey) => {
@@ -209,12 +253,145 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
     engineRef.current?.setTransmitMode(mode);
   }, []);
 
+  /** Inicia a transmissao com a fonte e a qualidade escolhidas no seletor. */
+  const startScreenShare = useCallback(
+    async (source: CaptureSource, quality: ScreenQuality) => {
+      const transport = transportRef.current;
+      if (!transport) return;
+
+      try {
+        const track = await screenRef.current.start(source, quality);
+        await transport.addVideoTrack(track, {
+          maxBitrate: quality.maxBitrate,
+          maxFramerate: quality.frameRate,
+          degradationPreference: quality.degradation,
+        });
+
+        const audio = screenRef.current.getAudioTrack();
+        if (audio) await transport.addSystemAudioTrack(audio);
+
+        sounds.play('success');
+        setState((s) => ({
+          ...s,
+          screenSharing: true,
+          screenPaused: false,
+          capture: screenRef.current.getCaptureInfo(),
+        }));
+
+        // O usuario pode encerrar pela barra do proprio sistema.
+        screenRef.current.onEnded(() => void stopScreenShare());
+      } catch (error) {
+        sounds.play('error');
+        await screenRef.current.stop();
+        setState((s) => ({
+          ...s,
+          error:
+            error instanceof Error
+              ? `Nao foi possivel compartilhar: ${error.message}`
+              : 'Nao foi possivel compartilhar a tela',
+        }));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const stopScreenShare = useCallback(async () => {
+    if (!screenRef.current.isActive()) return;
+    await transportRef.current?.removeVideoTrack();
+    await transportRef.current?.removeSystemAudioTrack();
+    await screenRef.current.stop();
+    sounds.play('leave');
+    setState((s) => ({
+      ...s,
+      screenSharing: false,
+      screenPaused: false,
+      capture: null,
+      screenStats: null,
+    }));
+  }, []);
+
+  /** Congela a imagem sem derrubar a conexao. */
+  const toggleScreenPause = useCallback(async () => {
+    const engine = screenRef.current;
+    if (!engine.isActive()) return;
+
+    const track = engine.isPaused() ? engine.resume() : await engine.pause();
+    if (track) await transportRef.current?.replaceVideoTrack(track);
+
+    sounds.play(engine.isPaused() ? 'mute' : 'unmute');
+    setState((s) => ({ ...s, screenPaused: engine.isPaused() }));
+  }, []);
+
+  /** Troca a fonte transmitida sem interromper quem esta assistindo. */
+  const switchScreenSource = useCallback(
+    async (source: CaptureSource, quality: ScreenQuality) => {
+      const transport = transportRef.current;
+      if (!transport || !screenRef.current.isActive()) return;
+
+      const antigaComAudio = screenRef.current.getAudioTrack() !== null;
+      const track = await screenRef.current.start(source, quality);
+      await transport.replaceVideoTrack(track);
+      await transport.setVideoEncoding({
+        maxBitrate: quality.maxBitrate,
+        maxFramerate: quality.frameRate,
+        degradationPreference: quality.degradation,
+      });
+
+      if (antigaComAudio) await transport.removeSystemAudioTrack();
+      const audio = screenRef.current.getAudioTrack();
+      if (audio) await transport.addSystemAudioTrack(audio);
+
+      screenRef.current.onEnded(() => void stopScreenShare());
+      setState((s) => ({ ...s, capture: screenRef.current.getCaptureInfo() }));
+    },
+    [stopScreenShare],
+  );
+
+  /** Ajusta qualidade durante a transmissao, sem reabrir a fonte. */
+  const applyScreenQuality = useCallback(async (quality: ScreenQuality) => {
+    await screenRef.current.applyQuality(quality);
+    await transportRef.current?.setVideoEncoding({
+      maxBitrate: quality.maxBitrate,
+      maxFramerate: quality.frameRate,
+      degradationPreference: quality.degradation,
+    });
+    setState((s) => ({ ...s, capture: screenRef.current.getCaptureInfo() }));
+  }, []);
+
+  // Metricas do que estamos transmitindo.
+  useEffect(() => {
+    if (!state.screenSharing) return;
+    const id = setInterval(async () => {
+      const screenStats = await transportRef.current?.getOutboundVideoStats();
+      if (screenStats) setState((s) => ({ ...s, screenStats }));
+    }, 2000);
+    return () => clearInterval(id);
+  }, [state.screenSharing]);
+
   useEffect(() => {
     return () => {
       void transportRef.current?.disconnect();
       void engineRef.current?.stop();
+      void screenRef.current.stop();
     };
   }, []);
 
-  return { state, join, leave, toggleMute, toggleDeafen, setTransmitMode };
+  /** Streams de video remotos ativos (peers compartilhando a tela). */
+  const remoteScreens = new Map(videoElements.current);
+
+  return {
+    state,
+    join,
+    leave,
+    toggleMute,
+    toggleDeafen,
+    setTransmitMode,
+    startScreenShare,
+    stopScreenShare,
+    toggleScreenPause,
+    switchScreenSource,
+    applyScreenQuality,
+    remoteScreens,
+  };
 }

@@ -3,13 +3,13 @@
 // sem isso, uma falha de import vira uma caixa "Error" generica sem rastro.
 import { fatal, log } from './diagnostics';
 import { join } from 'node:path';
-import { BrowserWindow, app, shell } from 'electron';
+import { BrowserWindow, app, nativeImage, session as electronSession, shell } from 'electron';
 import { registerIpc } from './ipc';
 import type { Session as SessionType } from './session';
 
 const isDev = !app.isPackaged;
 let window: BrowserWindow | null = null;
-let session: SessionType | null = null;
+let appSession: SessionType | null = null;
 
 /** Import tardio: uma falha ao carregar o core chega ao log em vez de matar o app. */
 function createSession(): SessionType {
@@ -24,6 +24,12 @@ function createSession(): SessionType {
 }
 
 function createWindow(): void {
+  // Carrega o icone: em producao fica dentro do asar; em dev usa o arquivo de build.
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(__dirname, '../../../build/icon.png');
+  const icon = nativeImage.createFromPath(iconPath);
+
   window = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -32,6 +38,7 @@ function createWindow(): void {
     backgroundColor: '#000000',
     show: false,
     autoHideMenuBar: true,
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       // O renderer nao tem acesso ao Node. Toda operacao privilegiada passa
@@ -86,10 +93,18 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(() => {
+    // Permite que o renderer chame getDisplayMedia() para captura de tela.
+    // O Electron 28+ exige um handler explicito; sem ele a API e bloqueada.
+    // Passando video: undefined, o Electron abre o seletor nativo do OS
+    // para o usuario escolher qual janela ou tela compartilhar.
+    electronSession.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+      callback({});
+    });
+
     try {
       log('info', 'app pronto, iniciando sessao');
-      session = createSession();
-      registerIpc(session, () => window);
+      appSession = createSession();
+      registerIpc(appSession, () => window);
       createWindow();
     } catch (error) {
       fatal(error);
@@ -106,6 +121,6 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('before-quit', () => {
-    void session?.shutdown();
+    void appSession?.shutdown();
   });
 }

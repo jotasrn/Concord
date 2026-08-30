@@ -90,6 +90,18 @@ const api = {
       return () => ipcRenderer.removeListener('voice:incoming', listener);
     },
   },
+  screen: {
+    sources: () =>
+      call<
+        {
+          id: string;
+          name: string;
+          kind: 'screen' | 'window';
+          thumbnail: string;
+          appIcon: string | null;
+        }[]
+      >('desktop:sources'),
+  },
   invites: {
     create: (serverId: string) => call<string>('invites:create', serverId),
     accept: (code: string) => call<string>('invites:accept', code),

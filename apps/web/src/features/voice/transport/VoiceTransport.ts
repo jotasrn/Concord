@@ -43,6 +43,13 @@ export interface VoiceTransport {
   /** Metricas reais vindas de getStats(), nunca estimadas. */
   getStats(): Promise<Map<string, VoiceStats>>;
   replaceTrack(track: MediaStreamTrack): Promise<void>;
+  /**
+   * Adiciona uma track de video (ex: captura de tela) a todas as conexoes
+   * ativas. A renegociacao e disparada automaticamente via onnegotiationneeded.
+   */
+  addVideoTrack(track: MediaStreamTrack): Promise<void>;
+  /** Remove a track de video e renegocia. */
+  removeVideoTrack(): Promise<void>;
 }
 
 interface StatsSnapshot {
@@ -128,6 +135,52 @@ export class StatsReader {
     return stats;
   }
 
+  private previousVideo: StatsSnapshot | null = null;
+
+  /**
+   * Metricas do video que estamos ENVIANDO. Bitrate nao existe pronto no
+   * relatorio: sai da diferenca de bytes entre duas leituras, entao a
+   * primeira chamada devolve null nesse campo.
+   */
+  async readOutboundVideo(pc: RTCPeerConnection): Promise<ScreenStats> {
+    const report = await pc.getStats();
+    const stats: ScreenStats = { ...EMPTY_SCREEN_STATS };
+
+    const codecs = new Map<string, { mimeType?: string }>();
+    report.forEach((entry) => {
+      if (entry.type === 'codec') codecs.set(entry.id, entry as never);
+    });
+
+    report.forEach((entry) => {
+      const stat = entry as never as Record<string, number | string | undefined>;
+      if (entry.type !== 'outbound-rtp' || stat.kind !== 'video') return;
+
+      stats.width = stat.frameWidth !== undefined ? Number(stat.frameWidth) : null;
+      stats.height = stat.frameHeight !== undefined ? Number(stat.frameHeight) : null;
+      stats.fps = stat.framesPerSecond !== undefined ? Number(stat.framesPerSecond) : null;
+      stats.limitation =
+        typeof stat.qualityLimitationReason === 'string' ? stat.qualityLimitationReason : null;
+      stats.framesDropped =
+        stat.framesDropped !== undefined ? Number(stat.framesDropped) : null;
+
+      if (typeof stat.codecId === 'string') {
+        stats.codec = codecs.get(stat.codecId)?.mimeType?.replace('video/', '') ?? null;
+      }
+
+      const bytes = Number(stat.bytesSent ?? 0);
+      const timestamp = Number(entry.timestamp);
+      const anterior = this.previousVideo;
+      if (anterior && timestamp > anterior.timestamp) {
+        const deltaBits = (bytes - anterior.bytes) * 8;
+        const deltaSegundos = (timestamp - anterior.timestamp) / 1000;
+        if (deltaSegundos > 0) stats.bitrateKbps = deltaBits / deltaSegundos / 1000;
+      }
+      this.previousVideo = { bytes, timestamp };
+    });
+
+    return stats;
+  }
+
   reset(peerId?: string): void {
     if (peerId) this.previous.delete(peerId);
     else this.previous.clear();
@@ -154,3 +207,29 @@ export function classifyQuality(stats: VoiceStats): VoiceStats['quality'] {
     (jitterMs !== null && jitterMs > 30);
   return media ? 'media' : 'excelente';
 }
+
+export interface ScreenStats {
+  /** Resolucao efetivamente codificada, que pode ser menor que a capturada. */
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  bitrateKbps: number | null;
+  codec: string | null;
+  /**
+   * Motivo pelo qual o encoder esta reduzindo qualidade: 'cpu', 'bandwidth',
+   * 'none' ou 'other'. Vem direto do WebRTC.
+   */
+  limitation: string | null;
+  /** Quadros descartados por nao dar conta de codificar. */
+  framesDropped: number | null;
+}
+
+export const EMPTY_SCREEN_STATS: ScreenStats = {
+  width: null,
+  height: null,
+  fps: null,
+  bitrateKbps: null,
+  codec: null,
+  limitation: null,
+  framesDropped: null,
+};

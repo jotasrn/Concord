@@ -4,6 +4,10 @@ import { Avatar, Button, ErrorBanner, Input } from '../components/ui';
 import { AudioSettingsPanel } from '../features/voice/AudioSettingsPanel';
 import { PromptModal, PromptRequest } from '../components/PromptModal';
 import { CallPanel } from '../features/voice/CallPanel';
+import { ScreenViewer } from '../features/screenshare/ScreenViewer';
+import { SourcePicker } from '../features/screenshare/SourcePicker';
+import type { CaptureSource } from '../features/screenshare/ScreenShareEngine';
+import type { ScreenQuality } from '../features/screenshare/presets';
 import { useVoiceCall } from '../features/voice/useVoiceCall';
 import { sounds } from '../features/voice/audio/SoundEffects';
 import type { ChannelView, MemberView, MessageView, Profile, ServerView } from '../types/concord-api';
@@ -20,6 +24,7 @@ export function AppPage({ profile }: { profile: Profile }) {
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [prompt, setPrompt] = useState<PromptRequest | null>(null);
+  const [picker, setPicker] = useState<'novo' | 'trocar' | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const memberNames = new Map(members.map((m) => [m.userKey, m.displayName]));
@@ -300,9 +305,14 @@ export function AppPage({ profile }: { profile: Profile }) {
           state={call.state}
           selfName={profile.displayName}
           selfKey={profile.publicKey}
+          remoteScreens={call.remoteScreens}
           onLeave={() => void call.leave()}
           onToggleMute={call.toggleMute}
           onToggleDeafen={call.toggleDeafen}
+          onStartScreenShare={() => setPicker('novo')}
+          onStopScreenShare={() => void call.stopScreenShare()}
+          onTogglePause={() => void call.toggleScreenPause()}
+          onSwitchSource={() => setPicker('trocar')}
         />
 
         <footer className="flex items-center gap-2 border-t border-void-800 bg-void-850 p-2">
@@ -413,11 +423,28 @@ export function AppPage({ profile }: { profile: Profile }) {
         </div>
       </aside>
 
+      {picker && (
+        <SourcePicker
+          onCancel={() => setPicker(null)}
+          onStart={(source: CaptureSource, quality: ScreenQuality) => {
+            const acao = picker === 'trocar' ? call.switchScreenSource : call.startScreenShare;
+            setPicker(null);
+            void acao(source, quality);
+          }}
+        />
+      )}
+
       {prompt && <PromptModal request={prompt} onClose={() => setPrompt(null)} />}
 
       {showSettings && (
         <SettingsModal profile={profile} onClose={() => setShowSettings(false)} />
       )}
+
+      {/* Telas compartilhadas pelos peers: overlay flutuante no canto inferior direito */}
+      <ScreenViewer
+        remoteScreens={call.remoteScreens}
+        memberNames={memberNames}
+      />
     </div>
   );
 }

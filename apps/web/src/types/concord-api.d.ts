@@ -68,6 +68,17 @@ export interface ConcordApi {
     signal(serverId: string, signal: unknown): Promise<boolean>;
     onSignal(handler: (serverId: string, signal: any) => void): () => void;
   };
+  screen: {
+    sources(): Promise<
+      {
+        id: string;
+        name: string;
+        kind: 'screen' | 'window';
+        thumbnail: string;
+        appIcon: string | null;
+      }[]
+    >;
+  };
   invites: {
     create(serverId: string): Promise<string>;
     accept(code: string): Promise<string>;

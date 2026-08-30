@@ -1,4 +1,10 @@
-import { StatsReader, VoiceStats, VoiceTransport } from './VoiceTransport';
+import { ScreenStats, StatsReader, VoiceStats, VoiceTransport } from './VoiceTransport';
+
+export interface VideoEncodingOptions {
+  maxBitrate: number;
+  maxFramerate: number;
+  degradationPreference: RTCDegradationPreference;
+}
 
 export interface SignalSender {
   (signal: {
@@ -40,6 +46,9 @@ export class PeerToPeerTransport implements VoiceTransport {
   private readonly peers = new Map<string, PeerEntry>();
   private readonly stats = new StatsReader();
   private localTrack: MediaStreamTrack | null = null;
+  private localVideoTrack: MediaStreamTrack | null = null;
+  private systemAudioTrack: MediaStreamTrack | null = null;
+  private videoOptions: VideoEncodingOptions | null = null;
   private channelId: string | null = null;
 
   constructor(
@@ -76,6 +85,11 @@ export class PeerToPeerTransport implements VoiceTransport {
     };
 
     if (this.localTrack) pc.addTrack(this.localTrack);
+    if (this.localVideoTrack) {
+      const transceiver = pc.addTransceiver(this.localVideoTrack, { direction: 'sendonly' });
+      this.preferScreenCodecs(transceiver);
+    }
+    if (this.systemAudioTrack) pc.addTransceiver(this.systemAudioTrack, { direction: 'sendonly' });
 
     pc.ontrack = (event) => {
       for (const track of event.streams[0]?.getTracks() ?? [event.track]) {
@@ -121,6 +135,8 @@ export class PeerToPeerTransport implements VoiceTransport {
     };
 
     this.peers.set(peerKey, entry);
+    // Encoding precisa ser aplicado depois do sender existir.
+    void this.applyVideoEncoding(entry);
     return entry;
   }
 
@@ -234,12 +250,139 @@ export class PeerToPeerTransport implements VoiceTransport {
     }
   }
 
+  /**
+   * Publica a tela para todos os peers.
+   *
+   * Reusa o transceiver de video existente sempre que possivel: adicionar uma
+   * track nova dispara renegociacao completa, enquanto replaceTrack troca a
+   * midia sem interromper quem ja esta assistindo.
+   */
+  async addVideoTrack(track: MediaStreamTrack, options?: VideoEncodingOptions): Promise<void> {
+    this.localVideoTrack = track;
+    this.videoOptions = options ?? this.videoOptions;
+
+    for (const entry of this.peers.values()) {
+      const sender = entry.pc.getSenders().find((s) => s.track?.kind === 'video');
+      if (sender) {
+        await sender.replaceTrack(track);
+      } else {
+        const transceiver = entry.pc.addTransceiver(track, { direction: 'sendonly' });
+        this.preferScreenCodecs(transceiver);
+      }
+      await this.applyVideoEncoding(entry);
+    }
+  }
+
+  /** Troca a fonte compartilhada sem renegociar nem piscar a imagem. */
+  async replaceVideoTrack(track: MediaStreamTrack): Promise<void> {
+    this.localVideoTrack = track;
+    for (const entry of this.peers.values()) {
+      const sender = entry.pc.getSenders().find((s) => s.track?.kind === 'video');
+      if (sender) await sender.replaceTrack(track);
+    }
+  }
+
+  /** Aplica bitrate, framerate e politica de degradacao no encoder. */
+  async setVideoEncoding(options: VideoEncodingOptions): Promise<void> {
+    this.videoOptions = options;
+    for (const entry of this.peers.values()) await this.applyVideoEncoding(entry);
+  }
+
+  private async applyVideoEncoding(entry: PeerEntry): Promise<void> {
+    const sender = entry.pc.getSenders().find((s) => s.track?.kind === 'video');
+    if (!sender || !this.videoOptions) return;
+
+    const parameters = sender.getParameters();
+    if (!parameters.encodings || parameters.encodings.length === 0) {
+      parameters.encodings = [{}];
+    }
+
+    parameters.encodings[0].maxBitrate = this.videoOptions.maxBitrate;
+    parameters.encodings[0].maxFramerate = this.videoOptions.maxFramerate;
+    // Decide o que ceder sob pressao: quadros ou nitidez.
+    parameters.degradationPreference = this.videoOptions.degradationPreference;
+
+    try {
+      await sender.setParameters(parameters);
+    } catch {
+      // Navegador pode recusar combinacoes; a captura ja limita por cima.
+    }
+  }
+
+  /**
+   * Prioriza codecs bons em conteudo de tela.
+   *
+   * VP9 e AV1 codificam texto e areas estaticas muito melhor que VP8 e H264,
+   * que foram desenhados para video de camera. A diferenca aparece justamente
+   * em codigo e planilha, onde borrao e inaceitavel.
+   */
+  private preferScreenCodecs(transceiver: RTCRtpTransceiver): void {
+    if (typeof RTCRtpSender.getCapabilities !== 'function') return;
+    if (typeof transceiver.setCodecPreferences !== 'function') return;
+
+    const capabilities = RTCRtpSender.getCapabilities('video');
+    if (!capabilities) return;
+
+    const rank = (mime: string): number => {
+      const normalizado = mime.toLowerCase();
+      if (normalizado.includes('av1')) return 0;
+      if (normalizado.includes('vp9')) return 1;
+      if (normalizado.includes('vp8')) return 2;
+      if (normalizado.includes('h264')) return 3;
+      return 4;
+    };
+
+    try {
+      transceiver.setCodecPreferences(
+        [...capabilities.codecs].sort((a, b) => rank(a.mimeType) - rank(b.mimeType)),
+      );
+    } catch {
+      // Preferencia e otimizacao; falhar aqui nao impede a transmissao.
+    }
+  }
+
+  /** Remove a track de video e renegocia com todos os peers. */
+  async removeVideoTrack(): Promise<void> {
+    this.localVideoTrack = null;
+    for (const entry of this.peers.values()) {
+      const sender = entry.pc.getSenders().find((s) => s.track?.kind === 'video');
+      if (sender) entry.pc.removeTrack(sender);
+    }
+  }
+
+  /** Adiciona o audio do sistema como uma segunda faixa de audio. */
+  async addSystemAudioTrack(track: MediaStreamTrack): Promise<void> {
+    this.systemAudioTrack = track;
+    for (const entry of this.peers.values()) {
+      entry.pc.addTransceiver(track, { direction: 'sendonly' });
+    }
+  }
+
+  async removeSystemAudioTrack(): Promise<void> {
+    const track = this.systemAudioTrack;
+    if (!track) return;
+    for (const entry of this.peers.values()) {
+      const sender = entry.pc.getSenders().find((s) => s.track === track);
+      if (sender) entry.pc.removeTrack(sender);
+    }
+    this.systemAudioTrack = null;
+  }
+
+  /** Metricas de video do que ESTAMOS enviando, para o painel de diagnostico. */
+  async getOutboundVideoStats(): Promise<ScreenStats | null> {
+    const entry = [...this.peers.values()][0];
+    if (!entry) return null;
+    return this.stats.readOutboundVideo(entry.pc);
+  }
+
   async disconnect(): Promise<void> {
     if (this.channelId) this.send({ kind: 'leave', channelId: this.channelId });
     for (const key of [...this.peers.keys()]) this.removePeer(key);
     this.stats.reset();
     this.channelId = null;
     this.localTrack = null;
+    this.localVideoTrack = null;
+    this.systemAudioTrack = null;
   }
 
   peerKeys(): string[] {

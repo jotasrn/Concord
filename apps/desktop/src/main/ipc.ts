@@ -143,6 +143,7 @@ export function registerIpc(session: Session, getWindow: () => BrowserWindow | n
   );
 
   registerVoiceAndInviteIpc(session);
+  registerScreenIpc();
   void getWindow;
 }
 
@@ -161,5 +162,41 @@ export function registerVoiceAndInviteIpc(session: Session): void {
 
   ipcMain.handle('invites:accept', (_e, code: string) =>
     wrap(() => session.acceptInvite(code)),
+  );
+}
+
+/**
+ * Fontes de captura de tela.
+ *
+ * Usamos desktopCapturer em vez do seletor nativo do sistema porque assim o
+ * app controla a interface de escolha: miniaturas ao vivo, separacao entre
+ * telas e janelas, icone do aplicativo. O seletor nativo tambem nao existe de
+ * forma consistente entre plataformas.
+ */
+export function registerScreenIpc(): void {
+  ipcMain.handle('desktop:sources', () =>
+    wrap(async () => {
+      const { desktopCapturer } = require('electron') as typeof import('electron');
+      const sources = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        // Miniatura pequena: o custo aqui e serializar imagem por IPC, e a
+        // lista pode ter dezenas de janelas.
+        thumbnailSize: { width: 320, height: 180 },
+        fetchWindowIcons: true,
+      });
+
+      return sources
+        .filter((source) => !source.thumbnail.isEmpty())
+        .map((source) => ({
+          id: source.id,
+          name: source.name,
+          kind: source.id.startsWith('screen:') ? ('screen' as const) : ('window' as const),
+          // JPEG em vez de PNG: mesma miniatura com uma fracao dos bytes.
+          thumbnail: `data:image/jpeg;base64,${source.thumbnail.toJPEG(70).toString('base64')}`,
+          appIcon: source.appIcon && !source.appIcon.isEmpty()
+            ? `data:image/png;base64,${source.appIcon.toPNG().toString('base64')}`
+            : null,
+        }));
+    }),
   );
 }

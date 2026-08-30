@@ -49,6 +49,15 @@ export interface MemberView {
   userKey: string;
   displayName: string;
   permissions: string;
+  avatar: string | null;
+  bio: string | null;
+}
+
+export interface UserProfile {
+  userKey: string;
+  displayName: string;
+  avatar: string | null;
+  bio: string | null;
 }
 
 /**
@@ -204,6 +213,41 @@ export class ConcordStore {
     return serverId;
   }
 
+  /**
+   * Publica o perfil em TODOS os servidores em que participamos.
+   *
+   * O log e por servidor, entao um perfil so replica para quem compartilha
+   * pelo menos um servidor conosco - que e exatamente quem precisa ve-lo.
+   */
+  updateProfile(profile: { displayName: string; avatar: string | null; bio: string | null }): string[] {
+    const afetados: string[] = [];
+    for (const server of this.listServers()) {
+      this.commit('user.profile', server.id, {
+        displayName: profile.displayName,
+        avatar: profile.avatar,
+        bio: profile.bio,
+      });
+      afetados.push(server.id);
+    }
+    return afetados;
+  }
+
+  /** Perfil de um usuario, vindo da projecao. */
+  profileOf(userKey: string): UserProfile | null {
+    const row = this.db
+      .prepare('SELECT user_key, display_name, avatar, bio FROM users WHERE user_key = ?')
+      .get(userKey) as
+      | { user_key: string; display_name: string; avatar: string | null; bio: string | null }
+      | undefined;
+    if (!row) return null;
+    return {
+      userKey: row.user_key,
+      displayName: row.display_name,
+      avatar: row.avatar,
+      bio: row.bio,
+    };
+  }
+
   addMember(serverId: string, userKey: string, displayName: string): void {
     this.commit('member.join', serverId, { userKey, displayName, inviteCode: null });
   }
@@ -286,15 +330,25 @@ export class ConcordStore {
   listMembers(serverId: string): MemberView[] {
     return this.db
       .prepare(
-        'SELECT user_key, display_name, permissions FROM members WHERE server_id = ? ORDER BY joined_at',
+        `SELECT m.user_key, m.display_name, m.permissions, u.avatar, u.bio
+         FROM members m LEFT JOIN users u ON u.user_key = m.user_key
+         WHERE m.server_id = ? ORDER BY m.joined_at`,
       )
       .all(serverId)
       .map((r) => {
-        const row = r as { user_key: string; display_name: string; permissions: string };
+        const row = r as {
+          user_key: string;
+          display_name: string;
+          permissions: string;
+          avatar: string | null;
+          bio: string | null;
+        };
         return {
           userKey: row.user_key,
           displayName: row.display_name,
           permissions: row.permissions,
+          avatar: row.avatar,
+          bio: row.bio,
         };
       });
   }

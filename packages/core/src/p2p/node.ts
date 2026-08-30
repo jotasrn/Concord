@@ -5,7 +5,11 @@ import { ConcordStore } from '../store';
 import { Operation } from '../ops/types';
 import {
   FrameDecoder,
+  PeerPresence,
+  PresencePayload,
+  PresenceStatus,
   VoiceSignal,
+  isPresenceStatus,
   Message,
   computeHeads,
   encodeFrame,
@@ -32,6 +36,14 @@ export class P2PNode extends EventEmitter {
   private swarm: InstanceType<typeof Hyperswarm> | null = null;
   private readonly peers = new Map<string, PeerConnection>();
   private readonly joined = new Set<string>();
+
+  /**
+   * Status declarado por cada peer conectado. Some quando a conexao cai, que e
+   * exatamente o significado de ficar offline: nao ha registro a manter.
+   */
+  private readonly presence = new Map<string, { status: PresenceStatus; voice: string | null; at: number }>();
+  private myStatus: PresenceStatus = 'ONLINE';
+  private myVoiceChannel: string | null = null;
 
   constructor(private readonly store: ConcordStore) {
     super();
@@ -70,12 +82,19 @@ export class P2PNode extends EventEmitter {
       });
 
       const drop = () => {
+        const identity = peer.identityKey;
         this.peers.delete(remoteKey);
+        // So marca offline se nao houver outra conexao com a mesma identidade.
+        if (identity && ![...this.peers.values()].some((p) => p.identityKey === identity)) {
+          this.presence.delete(identity);
+          this.emit('presence:update', this.presenceSnapshot());
+        }
         this.emit('peer:disconnect', remoteKey);
       };
       socket.on('close', drop);
       socket.on('error', drop);
 
+      this.announcePresenceTo(peer);
       this.send(peer, {
         t: 'hello',
         servers: this.readableServers(),
@@ -211,6 +230,40 @@ export class P2PNode extends EventEmitter {
         this.emit('voice:signal', { serverId: message.serverId, signal });
         break;
       }
+
+      case 'presence': {
+        const key = this.store.serverKey(message.serverId);
+        if (!key || !peer.identityKey) break;
+
+        const plaintext = open(key, message.sealed as SealedPayload);
+        if (plaintext === null) break;
+
+        let payload: PresencePayload;
+        try {
+          payload = JSON.parse(plaintext) as PresencePayload;
+        } catch {
+          break;
+        }
+        if (!isPresenceStatus(payload?.status)) break;
+
+        // Um peer invisivel e tratado como offline: ele nao aparece na lista,
+        // exatamente como se nao houvesse conexao.
+        if (payload.status === 'INVISIBLE') {
+          this.presence.delete(peer.identityKey);
+        } else {
+          const atual = this.presence.get(peer.identityKey);
+          // Descarta anuncio mais antigo que o ultimo conhecido.
+          if (atual && atual.at > Number(payload.at ?? 0)) break;
+          this.presence.set(peer.identityKey, {
+            status: payload.status,
+            voice: typeof payload.voice === 'string' ? payload.voice : null,
+            at: Number(payload.at ?? Date.now()),
+          });
+        }
+
+        this.emit('presence:update', this.presenceSnapshot());
+        break;
+      }
     }
   }
 
@@ -233,6 +286,54 @@ export class P2PNode extends EventEmitter {
   broadcast(serverId: string, ops: Operation[]): void {
     if (ops.length === 0) return;
     for (const peer of this.peers.values()) this.sendOps(peer, serverId, ops);
+  }
+
+  // ---------- presenca ----------
+
+  /**
+   * Anuncia o proprio status para um peer.
+   *
+   * Vai cifrado com a chave de cada servidor em comum: quem nao participa do
+   * servidor nao descobre que estamos online.
+   */
+  private announcePresenceTo(peer: PeerConnection): void {
+    const payload: PresencePayload = {
+      status: this.myStatus,
+      voice: this.myVoiceChannel,
+      at: Date.now(),
+    };
+    for (const { serverId, key } of this.store.knownServerKeys()) {
+      this.send(peer, {
+        t: 'presence',
+        serverId,
+        sealed: seal(key, JSON.stringify(payload)),
+      });
+    }
+  }
+
+  /** Troca o proprio status e avisa todos os peers conectados. */
+  setStatus(status: PresenceStatus): void {
+    this.myStatus = status;
+    for (const peer of this.peers.values()) this.announcePresenceTo(peer);
+  }
+
+  getStatus(): PresenceStatus {
+    return this.myStatus;
+  }
+
+  /** Anuncia entrada ou saida de um canal de voz. */
+  setVoiceChannel(channelId: string | null): void {
+    this.myVoiceChannel = channelId;
+    for (const peer of this.peers.values()) this.announcePresenceTo(peer);
+  }
+
+  /** Quem esta online agora, por chave publica. */
+  presenceSnapshot(): Record<string, PeerPresence> {
+    const resultado: Record<string, PeerPresence> = {};
+    for (const [key, valor] of this.presence) {
+      resultado[key] = { status: valor.status, voice: valor.voice };
+    }
+    return resultado;
   }
 
   peerCount(): number {

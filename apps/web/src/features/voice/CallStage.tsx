@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Clock,
   Gauge,
   Headphones,
   HeadphoneOff,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Avatar } from '../../components/ui';
 import { CallState } from './useVoiceCall';
+import { formatDuration, useCallDuration } from './useCallDuration';
 
 /** Um quadro da grade: uma pessoa, com ou sem tela compartilhada. */
 interface Tile {
@@ -187,6 +189,7 @@ export function CallStage({
   onSwitchSource: () => void;
 }) {
   const [focado, setFocado] = useState<string | null>(null);
+  const duracao = useCallDuration(state.joinedAt);
 
   const tiles = useMemo<Tile[]>(() => {
     const proprio: Tile = {
@@ -236,7 +239,19 @@ export function CallStage({
         <span className="text-xs text-ink-400">
           {tiles.length} {tiles.length === 1 ? 'participante' : 'participantes'}
         </span>
-        {state.connecting && <span className="text-xs text-ink-400">conectando&hellip;</span>}
+        {state.connecting ? (
+          <span className="text-xs text-ink-400">conectando&hellip;</span>
+        ) : (
+          state.joinedAt !== null && (
+            <span
+              title="Tempo em chamada"
+              className="flex items-center gap-1 font-mono text-xs text-ink-300"
+            >
+              <Clock className="h-3 w-3" />
+              {formatDuration(duracao)}
+            </span>
+          )
+        )}
 
         {state.graphLatencyMs !== null && (
           <span

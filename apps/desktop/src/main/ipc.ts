@@ -144,6 +144,7 @@ export function registerIpc(session: Session, getWindow: () => BrowserWindow | n
 
   registerVoiceAndInviteIpc(session);
   registerScreenIpc();
+  registerProfileIpc(session);
   void getWindow;
 }
 
@@ -197,6 +198,49 @@ export function registerScreenIpc(): void {
             ? `data:image/png;base64,${source.appIcon.toPNG().toString('base64')}`
             : null,
         }));
+    }),
+  );
+}
+
+/** Perfil do usuario e presenca. */
+export function registerProfileIpc(session: Session): void {
+  ipcMain.handle(
+    'profile:update',
+    (_e, profile: { displayName: string; avatar: string | null; bio: string | null }) =>
+      wrap(async () => {
+        const nome = profile.displayName?.trim();
+        if (!nome) throw new Error('Escolha um nome de exibicao');
+        if (nome.length > 64) throw new Error('Nome muito longo');
+        if (profile.bio && profile.bio.length > 300) throw new Error('Biografia muito longa');
+        // O avatar ja chega redimensionado pelo renderer; aqui vale o teto que
+        // impede inchar o log replicado.
+        if (profile.avatar && profile.avatar.length > 48_000) {
+          throw new Error('Imagem muito grande, escolha outra');
+        }
+        await session.updateProfile({
+          displayName: nome,
+          avatar: profile.avatar ?? null,
+          bio: profile.bio?.trim() || null,
+        });
+        return true;
+      }),
+  );
+
+  ipcMain.handle('profile:get', (_e, userKey: string) => wrap(() => session.profileOf(userKey)));
+
+  ipcMain.handle('presence:set', (_e, status: 'ONLINE' | 'IDLE' | 'DND' | 'INVISIBLE') =>
+    wrap(() => {
+      session.setStatus(status);
+      return true;
+    }),
+  );
+
+  ipcMain.handle('presence:get', () => wrap(() => session.presence()));
+
+  ipcMain.handle('presence:voice', (_e, channelId: string | null) =>
+    wrap(() => {
+      session.setVoiceChannel(channelId);
+      return true;
     }),
   );
 }

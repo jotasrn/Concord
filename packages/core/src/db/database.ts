@@ -5,9 +5,29 @@ import { SCHEMA_SQL, SCHEMA_VERSION } from './schema';
 
 export type Db = Database.Database;
 
+/**
+ * Acrescenta colunas que apareceram depois da primeira versao.
+ *
+ * CREATE TABLE IF NOT EXISTS nao altera tabela existente, entao bancos criados
+ * em versoes anteriores ficariam sem as colunas novas.
+ */
+function addMissingColumns(db: Db): void {
+  const colunas = (tabela: string) =>
+    new Set(
+      (db.prepare(`PRAGMA table_info(${tabela})`).all() as { name: string }[]).map((c) => c.name),
+    );
+
+  const users = colunas('users');
+  if (!users.has('bio')) db.exec('ALTER TABLE users ADD COLUMN bio TEXT');
+  if (!users.has('self_declared')) {
+    db.exec('ALTER TABLE users ADD COLUMN self_declared INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
 export function openDatabase(path: string): Db {
   const db = new Database(path);
   db.exec(SCHEMA_SQL);
+  addMissingColumns(db);
   db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
     'schema_version',
     String(SCHEMA_VERSION),

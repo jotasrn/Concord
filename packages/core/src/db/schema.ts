@@ -40,6 +40,10 @@ CREATE TABLE IF NOT EXISTS users (
   user_key     TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
   avatar       TEXT,
+  bio          TEXT,
+  -- Marca perfis declarados pelo proprio dono. Um nome vindo de member.join
+  -- nunca deve sobrescrever o que a pessoa definiu sobre si mesma.
+  self_declared INTEGER NOT NULL DEFAULT 0,
   updated_at   INTEGER NOT NULL
 );
 

@@ -24,6 +24,9 @@ function createSession(): SessionType {
   (info) => {
     log('info', `migracao de chaves: ${info.migrados} gerada(s), ${info.semChave.length} sem chave`);
     window?.webContents.send('migration:notice', info);
+  },
+  (snapshot) => {
+    window?.webContents.send('presence:update', snapshot);
   });
 }
 

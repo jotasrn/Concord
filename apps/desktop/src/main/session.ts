@@ -26,6 +26,9 @@ export class Session {
     private readonly onOpsReceived: (serverId: string) => void,
     private readonly onVoiceSignal: (serverId: string, signal: unknown) => void = () => {},
     private readonly onMigration: (info: { migrados: number; semChave: string[] }) => void = () => {},
+    private readonly onPresence: (
+      snapshot: Record<string, { status: string; voice: string | null }>,
+    ) => void = () => {},
   ) {
     if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
   }
@@ -86,6 +89,7 @@ export class Session {
     this.node = new P2PNode(this.store);
     this.node.on('ops:received', ({ serverId }) => this.onOpsReceived(serverId));
     this.node.on('voice:signal', ({ serverId, signal }) => this.onVoiceSignal(serverId, signal));
+    this.node.on('presence:update', (snapshot) => this.onPresence(snapshot));
     await this.node.start();
 
     return identity;
@@ -145,6 +149,49 @@ export class Session {
   /** Servidores que ainda nao conseguem sincronizar por falta de chave. */
   serversWithoutKey(): string[] {
     return this.requireStore().serversWithoutKey().map((s) => s.name);
+  }
+
+  /** Publica o perfil e empurra para os peers de cada servidor afetado. */
+  async updateProfile(profile: {
+    displayName: string;
+    avatar: string | null;
+    bio: string | null;
+  }): Promise<void> {
+    const store = this.requireStore();
+    const antes = new Map(
+      store.listServers().map((s) => [s.id, new Set(store.operationsFor(s.id).map((o) => o.id))]),
+    );
+
+    store.updateProfile(profile);
+
+    const node = this.node;
+    if (!node) return;
+    for (const server of store.listServers()) {
+      const conhecidas = antes.get(server.id) ?? new Set<string>();
+      const novas = store.operationsFor(server.id).filter((o) => !conhecidas.has(o.id));
+      node.broadcast(server.id, novas);
+    }
+  }
+
+  profileOf(userKey: string) {
+    return this.requireStore().profileOf(userKey);
+  }
+
+  setStatus(status: 'ONLINE' | 'IDLE' | 'DND' | 'INVISIBLE'): void {
+    this.requireNode().setStatus(status);
+  }
+
+  /** Anuncia em qual canal de voz estamos, para a lista em tempo real. */
+  setVoiceChannel(channelId: string | null): void {
+    this.node?.setVoiceChannel(channelId);
+  }
+
+  presence(): { status: string; peers: Record<string, { status: string; voice: string | null }> } {
+    const node = this.node;
+    return {
+      status: node?.getStatus() ?? 'OFFLINE',
+      peers: node?.presenceSnapshot() ?? {},
+    };
   }
 
   peerCount(): number {

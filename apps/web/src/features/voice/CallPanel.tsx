@@ -1,6 +1,7 @@
 import { Headphones, HeadphoneOff, Mic, MicOff, Monitor, MonitorOff, PhoneOff, Signal, Volume2 } from 'lucide-react';
 import { Avatar } from '../../components/ui';
 import { CallState } from './useVoiceCall';
+import { formatDuration, useCallDuration } from './useCallDuration';
 import { ShareControls } from '../screenshare/ShareControls';
 
 const CORES_QUALIDADE: Record<string, string> = {
@@ -36,6 +37,9 @@ export function CallPanel({
   onTogglePause: () => void;
   onSwitchSource: () => void;
 }) {
+  // Hook antes de qualquer return condicional, senao a contagem de hooks muda
+  // quando a chamada termina.
+  const duracao = useCallDuration(state.joinedAt);
   if (!state.channelId) return null;
 
   const falando = state.audio?.transmitting && !state.muted;
@@ -47,7 +51,13 @@ export function CallPanel({
         <span className="truncate text-xs font-semibold text-violet-200">
           {state.channelName}
         </span>
-        {state.connecting && <span className="text-[10px] text-ink-400">conectando...</span>}
+        {state.connecting ? (
+          <span className="text-[10px] text-ink-400">conectando...</span>
+        ) : (
+          state.joinedAt !== null && (
+            <span className="font-mono text-[10px] text-ink-400">{formatDuration(duracao)}</span>
+          )
+        )}
         {state.screenSharing && (
           <span className="ml-auto flex items-center gap-1 rounded bg-violet-600/30 px-1.5 py-0.5 text-[10px] font-semibold text-violet-300">
             <Monitor className="h-2.5 w-2.5" />

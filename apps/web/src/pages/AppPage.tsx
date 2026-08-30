@@ -1,17 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, Hash, LogIn, Plus, Radio, Send, Settings, Share2, UserPlus, Volume2 } from 'lucide-react';
+import { Hash, LogIn, Plus, Radio, Send, Settings, Share2, UserPlus, Volume2 } from 'lucide-react';
 import { Avatar, Button, ErrorBanner, Input } from '../components/ui';
 import { AudioSettingsPanel } from '../features/voice/AudioSettingsPanel';
 import { PromptModal, PromptRequest } from '../components/PromptModal';
 import { CallPanel } from '../features/voice/CallPanel';
 import { CallStage } from '../features/voice/CallStage';
+import { ProfilePanel } from '../features/profile/ProfilePanel';
+import { StatusPicker } from '../features/profile/StatusPicker';
 import { ScreenViewer } from '../features/screenshare/ScreenViewer';
 import { SourcePicker } from '../features/screenshare/SourcePicker';
 import type { CaptureSource } from '../features/screenshare/ScreenShareEngine';
 import type { ScreenQuality } from '../features/screenshare/presets';
 import { useVoiceCall } from '../features/voice/useVoiceCall';
 import { sounds } from '../features/voice/audio/SoundEffects';
-import type { ChannelView, MemberView, MessageView, Profile, ServerView } from '../types/concord-api';
+import type {
+  ChannelView,
+  MemberView,
+  MessageView,
+  PeerPresence,
+  PresenceStatus,
+  Profile,
+  SettableStatus,
+  ServerView,
+} from '../types/concord-api';
 
 export function AppPage({ profile }: { profile: Profile }) {
   const [servers, setServers] = useState<ServerView[]>([]);
@@ -29,10 +40,53 @@ export function AppPage({ profile }: { profile: Profile }) {
   // Ao entrar numa chamada o palco assume a area principal; a aba deixa voltar
   // para o chat sem sair da call.
   const [aba, setAba] = useState<'chat' | 'call'>('chat');
+  // Status proprio nunca e OFFLINE: enquanto o app roda, existe conexao.
+  const [status, setStatus] = useState<SettableStatus>('ONLINE');
+  const [presencas, setPresencas] = useState<Record<string, PeerPresence>>({});
+  const [nomeProprio, setNomeProprio] = useState(profile.displayName);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const memberNames = new Map(members.map((m) => [m.userKey, m.displayName]));
   const call = useVoiceCall(activeServer, memberNames);
+
+  // O proprio perfil sai da lista de membros, que ja vem com avatar e bio.
+  const meuMembro = members.find((m) => m.userKey === profile.publicKey);
+  const meuAvatar = meuMembro?.avatar ?? null;
+
+  /**
+   * Presenca de um membro. Ausencia na lista de peers significa offline: nao
+   * ha registro de status para quem nao esta conectado.
+   */
+  const presencaDe = (userKey: string): PresenceStatus =>
+    userKey === profile.publicKey
+      ? status
+      : ((presencas[userKey]?.status as PresenceStatus | undefined) ?? 'OFFLINE');
+
+  /**
+   * Quem esta em cada canal de voz. Vem da presenca dos peers, entao reflete
+   * o estado real da rede - nao ha registro no log dizendo quem esta em call.
+   */
+  const ocupantesDe = (channelId: string) => {
+    const dentro = members
+      .filter((m) => presencas[m.userKey]?.voice === channelId)
+      .map((m) => ({
+        userKey: m.userKey,
+        name: m.displayName || m.userKey.slice(0, 8),
+        avatar: m.avatar,
+        speaking: false,
+      }));
+
+    // O proprio usuario nao vem pela rede: entra a partir do estado local.
+    if (call.state.channelId === channelId) {
+      dentro.unshift({
+        userKey: profile.publicKey,
+        name: nomeProprio,
+        avatar: meuAvatar,
+        speaking: Boolean(call.state.audio?.transmitting) && !call.state.muted,
+      });
+    }
+    return dentro;
+  };
 
   const report = (e: unknown) => setError(e instanceof Error ? e.message : 'Erro inesperado');
 
@@ -107,6 +161,17 @@ export function AppPage({ profile }: { profile: Profile }) {
     tick();
     const id = setInterval(tick, 3000);
     return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    void window.concord.presence
+      .get()
+      .then((p) => {
+        setStatus(p.status as SettableStatus);
+        setPresencas(p.peers);
+      })
+      .catch(() => undefined);
+    return window.concord.presence.onUpdate(setPresencas);
   }, []);
 
   useEffect(() => {
@@ -294,6 +359,7 @@ export function AppPage({ profile }: { profile: Profile }) {
                 items={voiceChannels}
                 icon={<Volume2 className="h-4 w-4" />}
                 activeId={call.state.channelId}
+                ocupantes={ocupantesDe}
                 onSelect={(id) => {
                   const canal = voiceChannels.find((c) => c.id === id);
                   if (!canal) return;
@@ -325,13 +391,28 @@ export function AppPage({ profile }: { profile: Profile }) {
         />
 
         <footer className="flex items-center gap-2 border-t border-void-800 bg-void-850 p-2">
-          <Avatar name={profile.displayName} userKey={profile.publicKey} size={32} />
+          <Avatar
+            name={nomeProprio}
+            userKey={profile.publicKey}
+            src={meuAvatar}
+            size={32}
+            status={status}
+          />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-semibold text-ink-100">{profile.displayName}</p>
-            <p className="flex items-center gap-1 text-[10px] text-ink-400">
-              <Radio className={`h-2.5 w-2.5 ${peers > 0 ? 'text-status-online' : 'text-status-offline'}`} />
-              {peers} {peers === 1 ? 'peer' : 'peers'}
-            </p>
+            <p className="truncate text-xs font-semibold text-ink-100">{nomeProprio}</p>
+            <div className="flex items-center gap-2">
+              <StatusPicker
+                status={status}
+                onChange={(novo) => {
+                  setStatus(novo);
+                  void window.concord.presence.set(novo).catch(report);
+                }}
+              />
+              <span className="flex items-center gap-1 text-[10px] text-ink-400" title="Peers conectados">
+                <Radio className={peers > 0 ? 'h-2.5 w-2.5 text-status-online' : 'h-2.5 w-2.5 text-status-offline'} />
+                {peers}
+              </span>
+            </div>
           </div>
           <button
             onClick={() => setShowSettings(true)}
@@ -451,14 +532,41 @@ export function AppPage({ profile }: { profile: Profile }) {
           )}
         </header>
         <div className="flex-1 space-y-1 overflow-y-auto p-2">
-          {members.map((m) => (
-            <div key={m.userKey} className="flex items-center gap-2 rounded px-2 py-1.5">
-              <Avatar name={m.displayName} userKey={m.userKey} size={28} />
-              <span className="truncate text-sm text-ink-200">
-                {m.displayName || m.userKey.slice(0, 8)}
-              </span>
-            </div>
-          ))}
+          {/* Online primeiro: quem esta disponivel agora e o que importa. */}
+          {[...members]
+            .sort((a, b) => {
+              const online = (k: string) => (presencaDe(k) === 'OFFLINE' ? 1 : 0);
+              return online(a.userKey) - online(b.userKey);
+            })
+            .map((m) => {
+              const presenca = presencaDe(m.userKey);
+              return (
+                <div
+                  key={m.userKey}
+                  title={m.bio ?? undefined}
+                  className={`flex items-center gap-2 rounded px-2 py-1.5 transition ${
+                    presenca === 'OFFLINE' ? 'opacity-45' : ''
+                  }`}
+                >
+                  <Avatar
+                    name={m.displayName}
+                    userKey={m.userKey}
+                    src={m.avatar}
+                    size={28}
+                    status={presenca}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-ink-200">
+                      {m.displayName || m.userKey.slice(0, 8)}
+                      <span className="ml-1 font-mono text-[10px] text-ink-400">
+                        #{m.userKey.slice(0, 4)}
+                      </span>
+                    </p>
+                    {m.bio && <p className="truncate text-[10px] text-ink-400">{m.bio}</p>}
+                  </div>
+                </div>
+              );
+            })}
         </div>
       </aside>
 
@@ -476,7 +584,15 @@ export function AppPage({ profile }: { profile: Profile }) {
       {prompt && <PromptModal request={prompt} onClose={() => setPrompt(null)} />}
 
       {showSettings && (
-        <SettingsModal profile={profile} onClose={() => setShowSettings(false)} />
+        <SettingsModal
+          profile={profile}
+          status={status}
+          onClose={() => setShowSettings(false)}
+          onProfileSaved={(nome) => {
+            setNomeProprio(nome);
+            if (activeServer) void loadServerContent(activeServer);
+          }}
+        />
       )}
 
       {/* Telas compartilhadas pelos peers: overlay flutuante no canto inferior direito */}
@@ -495,6 +611,7 @@ function ChannelGroup({
   activeId,
   onSelect,
   onAdd,
+  ocupantes,
 }: {
   label: string;
   items: ChannelView[];
@@ -502,6 +619,13 @@ function ChannelGroup({
   activeId: string | null;
   onSelect: (id: string) => void;
   onAdd: () => void;
+  /** Quem esta dentro de cada canal de voz agora. */
+  ocupantes?: (channelId: string) => {
+    userKey: string;
+    name: string;
+    avatar: string | null;
+    speaking: boolean;
+  }[];
 }) {
   return (
     <section>
@@ -511,74 +635,96 @@ function ChannelGroup({
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
-      {items.map((c) => (
-        <button
-          key={c.id}
-          onClick={() => onSelect(c.id)}
-          className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition ${
-            c.id === activeId
-              ? 'bg-violet-600/20 text-violet-200'
-              : 'text-ink-300 hover:bg-void-700 hover:text-ink-100'
-          }`}
-        >
-          <span className="text-ink-400">{icon}</span>
-          <span className="truncate">{c.name}</span>
-        </button>
-      ))}
+      {items.map((c) => {
+        const dentro = ocupantes?.(c.id) ?? [];
+        return (
+          <div key={c.id}>
+            <button
+              onClick={() => onSelect(c.id)}
+              className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition ${
+                c.id === activeId
+                  ? 'bg-violet-600/20 text-violet-200'
+                  : 'text-ink-300 hover:bg-void-700 hover:text-ink-100'
+              }`}
+            >
+              <span className="text-ink-400">{icon}</span>
+              <span className="flex-1 truncate text-left">{c.name}</span>
+              {dentro.length > 0 && (
+                <span className="rounded bg-violet-600/25 px-1.5 text-[10px] font-semibold text-violet-200">
+                  {dentro.length}
+                </span>
+              )}
+            </button>
+
+            {/* Quem esta na call agora, atualizado pela presenca dos peers. */}
+            {dentro.map((pessoa) => (
+              <div
+                key={pessoa.userKey}
+                className="ml-6 flex items-center gap-1.5 rounded px-2 py-1"
+                title={pessoa.name}
+              >
+                <Avatar
+                  name={pessoa.name}
+                  userKey={pessoa.userKey}
+                  src={pessoa.avatar}
+                  size={20}
+                />
+                <span
+                  className={`truncate text-xs ${
+                    pessoa.speaking ? 'font-semibold text-status-online' : 'text-ink-300'
+                  }`}
+                >
+                  {pessoa.name}
+                </span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
     </section>
   );
 }
 
-function SettingsModal({ profile, onClose }: { profile: Profile; onClose: () => void }) {
-  const [tab, setTab] = useState<'conta' | 'audio'>('conta');
+function SettingsModal({
+  profile,
+  status,
+  onClose,
+  onProfileSaved,
+}: {
+  profile: Profile;
+  status: SettableStatus;
+  onClose: () => void;
+  onProfileSaved: (displayName: string) => void;
+}) {
+  const [tab, setTab] = useState<'perfil' | 'audio'>('perfil');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
-      <div className="panel flex h-[600px] w-full max-w-3xl overflow-hidden">
+      <div className="panel flex h-[640px] w-full max-w-3xl overflow-hidden">
         <nav className="w-44 shrink-0 space-y-1 border-r border-void-700 bg-void-850 p-3">
-          {(['conta', 'audio'] as const).map((t) => (
+          {(['perfil', 'audio'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`w-full rounded px-3 py-2 text-left text-sm capitalize transition ${
+              className={`w-full rounded px-3 py-2 text-left text-sm transition ${
                 tab === t ? 'bg-violet-600/20 text-violet-200' : 'text-ink-300 hover:bg-void-700'
               }`}
             >
-              {t === 'conta' ? 'Minha conta' : 'Voz e video'}
+              {t === 'perfil' ? 'Meu perfil' : 'Voz e video'}
             </button>
           ))}
-          <button onClick={onClose} className="mt-4 w-full rounded px-3 py-2 text-left text-sm text-ink-400 hover:text-ink-100">
+          <button
+            onClick={onClose}
+            className="mt-4 w-full rounded px-3 py-2 text-left text-sm text-ink-400 hover:text-ink-100"
+          >
             Fechar
           </button>
         </nav>
 
         <div className="flex-1 overflow-y-auto p-6">
-          {tab === 'conta' && (
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold text-ink-100">Minha conta</h2>
-              <div className="space-y-1">
-                <p className="text-xs uppercase tracking-wide text-ink-400">Handle</p>
-                <p className="selectable font-mono text-sm text-violet-300">{profile.handle}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs uppercase tracking-wide text-ink-400">
-                  Sua chave publica &mdash; mande para quem for te adicionar
-                </p>
-                <div className="flex gap-2">
-                  <p className="selectable min-w-0 flex-1 break-all rounded-lg border border-void-600 bg-void-850 p-2 font-mono text-[11px] text-ink-200">
-                    {profile.publicKey}
-                  </p>
-                  <Button
-                    variant="ghost"
-                    onClick={() => void navigator.clipboard.writeText(profile.publicKey)}
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
+          {tab === 'perfil' && (
+            <ProfilePanel profile={profile} status={status} onSaved={onProfileSaved} />
           )}
-
           {tab === 'audio' && <AudioSettingsPanel />}
         </div>
       </div>

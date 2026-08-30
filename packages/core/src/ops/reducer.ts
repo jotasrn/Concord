@@ -15,6 +15,7 @@ import {
   Operation,
   ServerCreatePayload,
   ServerUpdatePayload,
+  UserProfilePayload,
 } from './types';
 
 export interface RejectedOperation {
@@ -40,13 +41,18 @@ function memberPermissions(db: Db, serverId: string, userKey: string): string | 
   return row?.permissions ?? null;
 }
 
+/**
+ * Registra o nome que um terceiro atribuiu ao usuario ao adiciona-lo a um
+ * servidor. Nunca sobrescreve um perfil que a propria pessoa declarou: quem
+ * te adiciona nao decide como voce se chama.
+ */
 function upsertUser(db: Db, userKey: string, displayName: string, timestamp: number): void {
   db.prepare(
     `INSERT INTO users (user_key, display_name, updated_at) VALUES (?, ?, ?)
      ON CONFLICT (user_key) DO UPDATE SET
        display_name = excluded.display_name,
        updated_at   = excluded.updated_at
-     WHERE excluded.updated_at > users.updated_at`,
+     WHERE users.self_declared = 0 AND excluded.updated_at > users.updated_at`,
   ).run(userKey, displayName, timestamp);
 }
 
@@ -99,6 +105,31 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
       if (p.icon !== undefined) {
         db.prepare('UPDATE servers SET icon = ? WHERE id = ?').run(p.icon, op.serverId);
       }
+      return null;
+    }
+
+    case 'user.profile': {
+      const p = op.payload as UserProfilePayload;
+
+      // Perfil e sempre sobre si mesmo: nao ha campo de destinatario, o autor
+      // da operacao e o dono. Isso impede alguem trocar a foto de outro.
+      db.prepare(
+        `INSERT INTO users (user_key, display_name, avatar, bio, self_declared, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?)
+         ON CONFLICT (user_key) DO UPDATE SET
+           display_name  = excluded.display_name,
+           avatar        = excluded.avatar,
+           bio           = excluded.bio,
+           self_declared = 1,
+           updated_at    = excluded.updated_at
+         WHERE excluded.updated_at >= users.updated_at`,
+      ).run(op.authorKey, p.displayName, p.avatar, p.bio, op.timestamp);
+
+      // O nome exibido na lista de membros acompanha o perfil.
+      db.prepare('UPDATE members SET display_name = ? WHERE user_key = ?').run(
+        p.displayName,
+        op.authorKey,
+      );
       return null;
     }
 

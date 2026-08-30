@@ -29,6 +29,28 @@ export interface MemberView {
   userKey: string;
   displayName: string;
   permissions: string;
+  avatar: string | null;
+  bio: string | null;
+}
+
+/**
+ * OFFLINE nao e um status que se escolhe: ele e derivado da ausencia de
+ * conexao com o peer. Por isso presence.set aceita apenas os demais.
+ */
+export type PresenceStatus = 'ONLINE' | 'IDLE' | 'DND' | 'INVISIBLE' | 'OFFLINE';
+export type SettableStatus = Exclude<PresenceStatus, 'OFFLINE'>;
+
+export interface PeerPresence {
+  status: string;
+  /** Canal de voz em que o peer esta, ou null. */
+  voice: string | null;
+}
+
+export interface UserProfile {
+  userKey: string;
+  displayName: string;
+  avatar: string | null;
+  bio: string | null;
 }
 
 export interface Profile {
@@ -67,6 +89,16 @@ export interface ConcordApi {
   voice: {
     signal(serverId: string, signal: unknown): Promise<boolean>;
     onSignal(handler: (serverId: string, signal: any) => void): () => void;
+  };
+  profile: {
+    update(profile: { displayName: string; avatar: string | null; bio: string | null }): Promise<boolean>;
+    get(userKey: string): Promise<UserProfile | null>;
+  };
+  presence: {
+    set(status: SettableStatus): Promise<boolean>;
+    get(): Promise<{ status: string; peers: Record<string, PeerPresence> }>;
+    setVoiceChannel(channelId: string | null): Promise<boolean>;
+    onUpdate(handler: (peers: Record<string, PeerPresence>) => void): () => void;
   };
   screen: {
     sources(): Promise<

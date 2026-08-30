@@ -18,6 +18,13 @@ export const LIMITS = {
   PUBLIC_KEY_HEX: 64,
   ICON: 2048,
   INVITE_CODE: 64,
+  BIO: 300,
+  /**
+   * Teto do avatar em caracteres de data URL. Cada troca de foto reescreve
+   * essa string no log de todos os peers, entao o limite e apertado de
+   * proposito - 128x128 em JPEG cabe folgado.
+   */
+  AVATAR: 48_000,
 } as const;
 
 function isString(value: unknown, max: number): boolean {
@@ -48,6 +55,20 @@ function isPermissionMask(value: unknown): boolean {
 
 type Validator = (p: Record<string, unknown>) => boolean;
 
+/**
+ * Aceita apenas data URL de imagem em base64.
+ *
+ * Sem esta checagem um peer poderia mandar `javascript:` ou uma URL remota no
+ * campo de avatar, e a interface renderizaria isso como origem de imagem.
+ */
+function isDataUrlImage(value: unknown): boolean {
+  return (
+    typeof value === 'string' &&
+    value.length <= LIMITS.AVATAR &&
+    /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
+  );
+}
+
 const VALIDATORS: Record<OpType, Validator> = {
   'server.create': (p) =>
     isString(p.serverId, LIMITS.ID) &&
@@ -58,6 +79,11 @@ const VALIDATORS: Record<OpType, Validator> = {
   'server.update': (p) =>
     (p.name === undefined || isString(p.name, LIMITS.NAME)) &&
     (p.icon === undefined || isOptionalString(p.icon, LIMITS.ICON)),
+
+  'user.profile': (p) =>
+    isString(p.displayName, LIMITS.NAME) &&
+    (p.avatar === null || isDataUrlImage(p.avatar)) &&
+    (p.bio === null || isString(p.bio, LIMITS.BIO)),
 
   'member.join': (p) =>
     isPublicKey(p.userKey) &&

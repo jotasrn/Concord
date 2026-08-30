@@ -18,7 +18,9 @@ export type Message =
   // As operacoes viajam cifradas com a chave do servidor.
   | { t: 'ops'; serverId: string; sealed: SealedPayload }
   // Sinalizacao WebRTC e presenca de voz, cifradas com a chave do servidor.
-  | { t: 'voice'; serverId: string; sealed: SealedPayload };
+  | { t: 'voice'; serverId: string; sealed: SealedPayload }
+  // Presenca e efemera: vive na conexao, nunca entra no log.
+  | { t: 'presence'; serverId: string; sealed: SealedPayload };
 
 /** Maior seq conhecido por autor. E o "onde eu parei" de cada log. */
 export type Heads = Record<string, number>;
@@ -92,4 +94,31 @@ export interface VoiceSignal {
   to?: string;
   channelId: string;
   data?: unknown;
+}
+
+/** Status declarado por um peer. Nao e assinado nem persistido. */
+export type PresenceStatus = 'ONLINE' | 'IDLE' | 'DND' | 'INVISIBLE';
+
+export interface PeerPresence {
+  status: PresenceStatus;
+  voice: string | null;
+}
+
+export interface PresencePayload {
+  status: PresenceStatus;
+  /**
+   * Canal de voz em que o peer esta agora, ou null.
+   *
+   * Viaja junto da presenca em vez de virar operacao: entrar e sair de call e
+   * efemero, e registrar isso no log replicaria ruido para sempre.
+   */
+  voice?: string | null;
+  /** Relogio do proprio peer, so para descartar mensagens fora de ordem. */
+  at: number;
+}
+
+export const PRESENCE_STATUSES: PresenceStatus[] = ['ONLINE', 'IDLE', 'DND', 'INVISIBLE'];
+
+export function isPresenceStatus(value: unknown): value is PresenceStatus {
+  return typeof value === 'string' && (PRESENCE_STATUSES as string[]).includes(value);
 }

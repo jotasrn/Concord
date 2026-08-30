@@ -32,6 +32,8 @@ export interface CallState {
   localScreen: MediaStream | null;
   latencyProfile: LatencyProfile['id'];
   graphLatencyMs: number | null;
+  /** Momento em que a chamada comecou, para contar o tempo em call. */
+  joinedAt: number | null;
 }
 
 const ESTADO_INICIAL: CallState = {
@@ -50,6 +52,7 @@ const ESTADO_INICIAL: CallState = {
   localScreen: null,
   latencyProfile: 'ultra',
   graphLatencyMs: null,
+  joinedAt: null,
 };
 
 /**
@@ -149,6 +152,7 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
     engineRef.current = null;
     for (const key of [...audioElements.current.keys()]) desanexarAudio(key);
     videoElements.current.clear();
+    void window.concord.presence.setVoiceChannel(null).catch(() => undefined);
     sounds.play('leave');
     setState(ESTADO_INICIAL);
   }, [desanexarAudio]);
@@ -210,10 +214,12 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
         transport.setLatencyProfile(perfil);
         await transport.connect(channelId, track);
         sounds.play('join');
+        void window.concord.presence.setVoiceChannel(channelId).catch(() => undefined);
         setState((s) => ({
           ...s,
           connecting: false,
           graphLatencyMs: engine.getGraphLatencyMs(),
+          joinedAt: Date.now(),
         }));
       } catch (error) {
         sounds.play('error');

@@ -10,6 +10,7 @@
 export type OpType =
   | 'server.create'
   | 'server.update'
+  | 'user.profile'
   | 'member.join'
   | 'member.role'
   | 'channel.create'
@@ -34,6 +35,22 @@ export interface ServerCreatePayload {
 export interface ServerUpdatePayload {
   name?: string;
   icon?: string | null;
+}
+
+/**
+ * Perfil do proprio usuario. E auto-declarado: so vale quando o autor da
+ * operacao e o dono do perfil, e nesse caso sempre vence o nome que terceiros
+ * atribuiram ao adiciona-lo a um servidor.
+ *
+ * O avatar viaja embutido como data URL. Num log replicado isso so e viavel
+ * porque a imagem e reduzida a 128px antes de sair do cliente - um arquivo
+ * grande ficaria replicado para sempre em todos os peers.
+ */
+export interface UserProfilePayload {
+  displayName: string;
+  /** data URL de imagem, ja redimensionada. Null remove o avatar. */
+  avatar: string | null;
+  bio: string | null;
 }
 
 export interface MemberJoinPayload {
@@ -88,6 +105,7 @@ export interface MessageDeletePayload {
 export type OpPayload =
   | ServerCreatePayload
   | ServerUpdatePayload
+  | UserProfilePayload
   | MemberJoinPayload
   | MemberRolePayload
   | ChannelCreatePayload

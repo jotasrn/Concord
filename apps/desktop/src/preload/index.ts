@@ -90,6 +90,37 @@ const api = {
       return () => ipcRenderer.removeListener('voice:incoming', listener);
     },
   },
+  profile: {
+    update: (profile: { displayName: string; avatar: string | null; bio: string | null }) =>
+      call<boolean>('profile:update', profile),
+    get: (userKey: string) =>
+      call<{
+        userKey: string;
+        displayName: string;
+        avatar: string | null;
+        bio: string | null;
+      } | null>('profile:get', userKey),
+  },
+  presence: {
+    set: (status: 'ONLINE' | 'IDLE' | 'DND' | 'INVISIBLE') =>
+      call<boolean>('presence:set', status),
+    get: () =>
+      call<{ status: string; peers: Record<string, { status: string; voice: string | null }> }>(
+        'presence:get',
+      ),
+    setVoiceChannel: (channelId: string | null) =>
+      call<boolean>('presence:voice', channelId),
+    onUpdate: (
+      handler: (peers: Record<string, { status: string; voice: string | null }>) => void,
+    ) => {
+      const listener = (
+        _e: unknown,
+        peers: Record<string, { status: string; voice: string | null }>,
+      ) => handler(peers);
+      ipcRenderer.on('presence:update', listener);
+      return () => ipcRenderer.removeListener('presence:update', listener);
+    },
+  },
   screen: {
     sources: () =>
       call<

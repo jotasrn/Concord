@@ -25,6 +25,7 @@ export class Session {
     private readonly dataDir: string,
     private readonly onOpsReceived: (serverId: string) => void,
     private readonly onVoiceSignal: (serverId: string, signal: unknown) => void = () => {},
+    private readonly onMigration: (info: { migrados: number; semChave: string[] }) => void = () => {},
   ) {
     if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
   }
@@ -74,6 +75,14 @@ export class Session {
     const identity = decryptKeystore(keystore, password);
 
     this.store = new ConcordStore(this.dbPath, identity);
+
+    // Servidores de versoes anteriores nao tem chave e nao sincronizam. O dono
+    // consegue gerar uma; os demais precisam de um convite novo.
+    const { migrados, semChave } = this.store.migrateServerKeys();
+    if (migrados.length > 0 || semChave.length > 0) {
+      this.onMigration({ migrados: migrados.length, semChave: semChave.map((s) => s.name) });
+    }
+
     this.node = new P2PNode(this.store);
     this.node.on('ops:received', ({ serverId }) => this.onOpsReceived(serverId));
     this.node.on('voice:signal', ({ serverId, signal }) => this.onVoiceSignal(serverId, signal));
@@ -131,6 +140,11 @@ export class Session {
       publicKey: store.publicKeyHex,
       handle: formatHandle(store.identity.displayName, store.identity.publicKey),
     };
+  }
+
+  /** Servidores que ainda nao conseguem sincronizar por falta de chave. */
+  serversWithoutKey(): string[] {
+    return this.requireStore().serversWithoutKey().map((s) => s.name);
   }
 
   peerCount(): number {

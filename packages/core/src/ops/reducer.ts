@@ -1,4 +1,5 @@
 import { Permission } from '@concord/types';
+import { Vault } from '../crypto/vault';
 import { Db, clearProjection, getAllOperations } from '../db/database';
 import { verifyOperation } from './sign';
 import { validatePayload } from './validate';
@@ -57,7 +58,7 @@ function upsertUser(db: Db, userKey: string, displayName: string, timestamp: num
  * um peer pode mandar qualquer coisa, e simplesmente ignoramos o que ele nao
  * tinha direito de fazer.
  */
-function applyOne(db: Db, op: Operation): string | null {
+function applyOne(db: Db, op: Operation, vault: Vault): string | null {
   switch (op.type) {
     case 'server.create': {
       const p = op.payload as ServerCreatePayload;
@@ -232,7 +233,7 @@ function applyOne(db: Db, op: Operation): string | null {
         p.channelId,
         op.serverId,
         op.authorKey,
-        p.content,
+        vault.seal(p.content),
         p.replyToId,
         op.timestamp,
         op.lamport,
@@ -251,7 +252,7 @@ function applyOne(db: Db, op: Operation): string | null {
       if (msg.deleted) return 'mensagem apagada';
 
       db.prepare('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?').run(
-        p.content,
+        vault.seal(p.content),
         op.timestamp,
         p.messageId,
       );
@@ -289,8 +290,8 @@ function applyOne(db: Db, op: Operation): string | null {
  * qualquer peer com o mesmo conjunto de operacoes chega ao mesmo resultado,
  * independente da ordem em que elas chegaram pela rede.
  */
-export function rebuildProjection(db: Db): ReduceResult {
-  const ops = getAllOperations(db);
+export function rebuildProjection(db: Db, vault: Vault): ReduceResult {
+  const ops = getAllOperations(db, vault);
   const rejected: RejectedOperation[] = [];
   let applied = 0;
 
@@ -311,7 +312,7 @@ export function rebuildProjection(db: Db): ReduceResult {
       }
 
       try {
-        const reason = applyOne(db, op);
+        const reason = applyOne(db, op, vault);
         if (reason) rejected.push({ op, reason });
         else applied++;
       } catch (error) {

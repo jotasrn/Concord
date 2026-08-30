@@ -109,6 +109,12 @@ const api = {
   network: {
     status: () => call<{ peers: number; online: boolean }>('network:status'),
   },
+  /** Avisa sobre servidores antigos migrados ou sem chave. */
+  onMigrationNotice: (handler: (info: { migrados: number; semChave: string[] }) => void) => {
+    const listener = (_e: unknown, info: { migrados: number; semChave: string[] }) => handler(info);
+    ipcRenderer.on('migration:notice', listener);
+    return () => ipcRenderer.removeListener('migration:notice', listener);
+  },
   /** Avisa a UI que operacoes novas chegaram de um peer. */
   onSyncUpdate: (handler: (serverId: string) => void) => {
     const listener = (_e: unknown, serverId: string) => handler(serverId);

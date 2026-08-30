@@ -11,6 +11,7 @@
  * que realmente precisam existir em disco: os nativos.
  */
 const { build } = require('esbuild');
+const { rmSync } = require('node:fs');
 const { join } = require('node:path');
 
 const desktopDir = join(__dirname, '..');
@@ -24,17 +25,29 @@ const desktopDir = join(__dirname, '..');
  */
 const external = ['electron', 'better-sqlite3', 'hyperswarm'];
 
+const producao = process.env.NODE_ENV !== 'development';
+
 const common = {
   bundle: true,
   platform: 'node',
   target: 'node20',
   format: 'cjs',
   external,
-  sourcemap: true,
+  /**
+   * Sem sourcemap em producao. O mapa carrega o TypeScript original inteiro,
+   * comentarios inclusive - empacota-lo equivale a distribuir o codigo-fonte.
+   */
+  sourcemap: !producao,
+  minify: producao,
   logLevel: 'info',
 };
 
 async function main() {
+  // Limpa a saida antes de gerar: restos de builds anteriores (inclusive .map
+  // de quando o tsc emitia arquivos) estavam sendo empacotados.
+  rmSync(join(desktopDir, 'dist', 'main'), { recursive: true, force: true });
+  rmSync(join(desktopDir, 'dist', 'preload'), { recursive: true, force: true });
+
   await build({
     ...common,
     entryPoints: [join(desktopDir, 'src', 'main', 'index.ts')],

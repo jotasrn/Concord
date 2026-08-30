@@ -20,6 +20,10 @@ function createSession(): SessionType {
   },
   (serverId, signal) => {
     window?.webContents.send('voice:incoming', serverId, signal);
+  },
+  (info) => {
+    log('info', `migracao de chaves: ${info.migrados} gerada(s), ${info.semChave.length} sem chave`);
+    window?.webContents.send('migration:notice', info);
   });
 }
 
@@ -67,9 +71,31 @@ function createWindow(): void {
   });
 
   // Links externos abrem no navegador, nunca dentro da janela do app.
+  // Em producao o DevTools fica fechado: ele daria leitura e alteracao do
+  // renderer em tempo de execucao. Nao impede quem sabe extrair o asar, mas
+  // tira o caminho de um clique.
+  if (!isDev) {
+    window.webContents.on('before-input-event', (event, input) => {
+      const atalhoDevtools =
+        input.key === 'F12' ||
+        (input.control && input.shift && ['I', 'J', 'C'].includes(input.key.toUpperCase()));
+      if (atalhoDevtools) event.preventDefault();
+    });
+    window.webContents.on('devtools-opened', () => window?.webContents.closeDevTools());
+  }
+
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // Bloqueia navegacao para fora do app: um link malicioso numa mensagem nao
+  // deve conseguir substituir a janela por uma pagina remota.
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://') && url !== process.env.VITE_DEV_SERVER_URL) {
+      event.preventDefault();
+      log('error', `navegacao bloqueada para ${url}`);
+    }
   });
 
   if (isDev && process.env.VITE_DEV_SERVER_URL) {

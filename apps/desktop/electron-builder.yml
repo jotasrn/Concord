@@ -41,3 +41,7 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: Concord
 npmRebuild: true
+
+# Fuses gravados no binario apos o empacotamento (electron-builder 25 ainda
+# nao expoe electronFuses na configuracao).
+afterPack: scripts/afterPack.js

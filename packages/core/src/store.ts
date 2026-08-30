@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Identity } from './identity/keystore';
 import { toHex } from './identity/keypair';
 import { decodeInvite, encodeInvite, generateServerKey } from './crypto/serverKey';
+import { Vault } from './crypto/vault';
 import {
   Db,
   currentLamport,
@@ -58,11 +59,19 @@ export class ConcordStore {
   readonly db: Db;
   readonly identity: Identity;
   readonly publicKeyHex: string;
+  /** Cifra o que vai para o disco. Existe so enquanto a conta esta destrancada. */
+  private readonly vault: Vault;
 
   constructor(dbPath: string, identity: Identity) {
     this.db = openDatabase(dbPath);
     this.identity = identity;
     this.publicKeyHex = toHex(identity.publicKey);
+    this.vault = new Vault(identity.privateKey);
+  }
+
+  /** Decifra o conteudo de uma mensagem vindo da projecao. */
+  private openContent(stored: string): string {
+    return this.vault.open(stored);
   }
 
   /** Cria, assina e aplica uma operacao local. */
@@ -80,8 +89,8 @@ export class ConcordStore {
       this.identity.privateKey,
     );
 
-    insertOperation(this.db, op);
-    rebuildProjection(this.db);
+    insertOperation(this.db, op, this.vault);
+    rebuildProjection(this.db, this.vault);
     return op;
   }
 
@@ -99,15 +108,15 @@ export class ConcordStore {
         discarded++;
         continue;
       }
-      if (insertOperation(this.db, op)) accepted++;
+      if (insertOperation(this.db, op, this.vault)) accepted++;
     }
 
-    if (accepted > 0) rebuildProjection(this.db);
+    if (accepted > 0) rebuildProjection(this.db, this.vault);
     return { accepted, discarded };
   }
 
   operationsFor(serverId: string): Operation[] {
-    return getOperations(this.db, serverId);
+    return getOperations(this.db, serverId, this.vault);
   }
 
   // ---------- comandos ----------
@@ -116,17 +125,58 @@ export class ConcordStore {
 
   /** Chave simetrica do servidor, ou null se nao participamos dele. */
   serverKey(serverId: string): Buffer | null {
-    return getServerKey(this.db, serverId);
+    return getServerKey(this.db, serverId, this.vault);
   }
 
   knownServerKeys(): { serverId: string; key: Buffer }[] {
-    return listServerKeys(this.db);
+    return listServerKeys(this.db, this.vault);
+  }
+
+  /**
+   * Gera chave para servidores que ainda nao tem uma.
+   *
+   * Servidores criados antes da cifragem por servidor ficaram sem chave, e sem
+   * ela nao ha topico na DHT: eles simplesmente paravam de sincronizar sem
+   * avisar. Aqui so o dono pode gerar, porque a chave precisa ser a mesma em
+   * todos os peers - quem nao e dono depende de um convite novo.
+   *
+   * Retorna os servidores que continuam sem chave.
+   */
+  migrateServerKeys(): { migrados: string[]; semChave: ServerView[] } {
+    const migrados: string[] = [];
+    const semChave: ServerView[] = [];
+
+    for (const server of this.listServers()) {
+      if (getServerKey(this.db, server.id, this.vault)) continue;
+
+      if (server.ownerKey === this.publicKeyHex) {
+        saveServerKey(this.db, server.id, generateServerKey(), this.vault);
+        migrados.push(server.id);
+      } else {
+        semChave.push(server);
+      }
+    }
+
+    return { migrados, semChave };
+  }
+
+  /** Servidores que nao conseguem sincronizar por falta de chave. */
+  serversWithoutKey(): ServerView[] {
+    return this.listServers().filter((s) => !getServerKey(this.db, s.id, this.vault));
   }
 
   /** Codigo para dar a um amigo. Ele consegue ler o historico com isso. */
   createInvite(serverId: string): string {
-    const key = getServerKey(this.db, serverId);
-    if (!key) throw new Error('Servidor desconhecido');
+    const key = getServerKey(this.db, serverId, this.vault);
+    if (!key) {
+      const server = this.listServers().find((s) => s.id === serverId);
+      if (!server) throw new Error('Servidor desconhecido');
+      throw new Error(
+        server.ownerKey === this.publicKeyHex
+          ? 'Este servidor foi criado numa versao anterior e nao tem chave. Reinicie o app para gerar uma.'
+          : 'Voce nao tem a chave deste servidor. Peca um convite novo ao dono.',
+      );
+    }
     return encodeInvite(serverId, key);
   }
 
@@ -137,14 +187,14 @@ export class ConcordStore {
   acceptInvite(code: string): string {
     const invite = decodeInvite(code);
     if (!invite) throw new Error('Codigo de convite invalido');
-    saveServerKey(this.db, invite.serverId, invite.serverKey);
+    saveServerKey(this.db, invite.serverId, invite.serverKey, this.vault);
     return invite.serverId;
   }
 
   createServer(name: string, icon: string | null = null): string {
     const serverId = randomUUID();
     // A chave nasce junto com o servidor e define o topico da DHT.
-    saveServerKey(this.db, serverId, generateServerKey());
+    saveServerKey(this.db, serverId, generateServerKey(), this.vault);
     this.commit('server.create', serverId, {
       serverId,
       name,
@@ -286,7 +336,7 @@ export class ConcordStore {
           channelId: row.channel_id,
           authorKey: row.author_key,
           authorName: row.author_name,
-          content: row.content,
+          content: this.openContent(row.content),
           replyToId: row.reply_to_id,
           createdAt: row.created_at,
           editedAt: row.edited_at,

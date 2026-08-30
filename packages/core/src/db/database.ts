@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { Vault } from '../crypto/vault';
 import { Operation } from '../ops/types';
 import { SCHEMA_SQL, SCHEMA_VERSION } from './schema';
 
@@ -30,7 +31,7 @@ interface OpRow {
   signature: string;
 }
 
-function rowToOperation(row: OpRow): Operation {
+function rowToOperation(row: OpRow, vault: Vault): Operation {
   return {
     id: row.id,
     type: row.type as Operation['type'],
@@ -39,7 +40,7 @@ function rowToOperation(row: OpRow): Operation {
     seq: row.seq,
     lamport: row.lamport,
     timestamp: row.timestamp,
-    payload: JSON.parse(row.payload),
+    payload: JSON.parse(vault.open(row.payload)),
     signature: row.signature,
   };
 }
@@ -48,7 +49,7 @@ function rowToOperation(row: OpRow): Operation {
  * Grava a operacao no log. Retorna false se ela ja era conhecida - o que e
  * comum e esperado, ja que o mesmo op chega por varios peers.
  */
-export function insertOperation(db: Db, op: Operation): boolean {
+export function insertOperation(db: Db, op: Operation, vault: Vault): boolean {
   const result = db
     .prepare(
       `INSERT OR IGNORE INTO ops
@@ -63,27 +64,27 @@ export function insertOperation(db: Db, op: Operation): boolean {
       op.seq,
       op.lamport,
       op.timestamp,
-      JSON.stringify(op.payload),
+      vault.seal(JSON.stringify(op.payload)),
       op.signature,
     );
   return result.changes > 0;
 }
 
-export function getOperations(db: Db, serverId: string): Operation[] {
+export function getOperations(db: Db, serverId: string, vault: Vault): Operation[] {
   return db
     .prepare(
       `SELECT * FROM ops WHERE server_id = ?
        ORDER BY lamport ASC, author_key ASC, seq ASC`,
     )
     .all(serverId)
-    .map((row) => rowToOperation(row as OpRow));
+    .map((row) => rowToOperation(row as OpRow, vault));
 }
 
-export function getAllOperations(db: Db): Operation[] {
+export function getAllOperations(db: Db, vault: Vault): Operation[] {
   return db
     .prepare(`SELECT * FROM ops ORDER BY server_id, lamport ASC, author_key ASC, seq ASC`)
     .all()
-    .map((row) => rowToOperation(row as OpRow));
+    .map((row) => rowToOperation(row as OpRow, vault));
 }
 
 /** Maior lamport conhecido: base para carimbar a proxima operacao local. */
@@ -115,27 +116,27 @@ export function clearProjection(db: Db): void {
 
 // ---------- chaves de servidor ----------
 
-export function saveServerKey(db: Db, serverId: string, key: Buffer): void {
+export function saveServerKey(db: Db, serverId: string, key: Buffer, vault: Vault): void {
   db.prepare(
     `INSERT INTO server_keys (server_id, key_hex, added_at) VALUES (?, ?, ?)
      ON CONFLICT (server_id) DO UPDATE SET key_hex = excluded.key_hex`,
-  ).run(serverId, key.toString('hex'), Date.now());
+  ).run(serverId, vault.seal(key.toString('hex')), Date.now());
 }
 
-export function getServerKey(db: Db, serverId: string): Buffer | null {
+export function getServerKey(db: Db, serverId: string, vault: Vault): Buffer | null {
   const row = db
     .prepare('SELECT key_hex FROM server_keys WHERE server_id = ?')
     .get(serverId) as { key_hex: string } | undefined;
-  return row ? Buffer.from(row.key_hex, 'hex') : null;
+  return row ? Buffer.from(vault.open(row.key_hex), 'hex') : null;
 }
 
 /** Todos os servidores cujo conteudo conseguimos ler. */
-export function listServerKeys(db: Db): { serverId: string; key: Buffer }[] {
+export function listServerKeys(db: Db, vault: Vault): { serverId: string; key: Buffer }[] {
   return db
     .prepare('SELECT server_id, key_hex FROM server_keys ORDER BY added_at')
     .all()
     .map((r) => {
       const row = r as { server_id: string; key_hex: string };
-      return { serverId: row.server_id, key: Buffer.from(row.key_hex, 'hex') };
+      return { serverId: row.server_id, key: Buffer.from(vault.open(row.key_hex), 'hex') };
     });
 }

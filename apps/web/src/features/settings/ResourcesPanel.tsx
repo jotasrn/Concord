@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Cpu, HardDrive, MemoryStick, Power } from 'lucide-react';
+import { AlertTriangle, Cpu, HardDrive, MemoryStick, Power, ShieldCheck } from 'lucide-react';
 import { Button, ErrorBanner } from '../../components/ui';
 
 interface Recursos {
@@ -173,6 +173,20 @@ export function ResourcesPanel() {
           Remove mensagens antigas deste dispositivo. Canais, membros e permissoes ficam intactos.
           O que for removido aqui nao volta pela sincronizacao, mas continua com quem ainda tiver a
           copia.
+        </p>
+      </section>
+
+      {/* Rede e firewall */}
+      <section className="space-y-2 border-t border-void-700 pt-4">
+        <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-ink-400">
+          <ShieldCheck className="h-3.5 w-3.5" /> Firewall do Windows
+        </label>
+        <p className="text-[11px] text-ink-400">
+          Na primeira execucao o Windows pode pedir permissao de rede, com aviso de
+          administrador. <span className="text-ink-200">Voce pode recusar sem problema.</span> A
+          conexao entre voces e feita por furo de NAT: os dois lados abrem a conversa de dentro
+          para fora, e o firewall libera a resposta automaticamente. A permissao so serviria para
+          receber conexoes nao solicitadas, que o app nao usa.
         </p>
       </section>
 

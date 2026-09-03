@@ -32,7 +32,12 @@ win:
   target:
     - target: nsis
       arch: [x64]
-  artifactName: Concord-Setup-${version}.${ext}
+    # Versao sem instalador: descompacta e executa. Nao remove o aviso do
+    # SmartScreen, que so some com assinatura digital, mas elimina a etapa de
+    # instalacao e qualquer pedido de elevacao.
+    - target: zip
+      arch: [x64]
+  artifactName: Concord-${version}-${ext}.${ext}
 nsis:
   oneClick: false
   perMachine: false

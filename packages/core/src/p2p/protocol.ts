@@ -10,9 +10,14 @@ import { Operation } from '../ops/types';
  * exatamente o caso: "me diz onde voce parou, eu te mando o que falta".
  */
 export type Message =
-  // 'me' e a chave publica Concord do peer. O id do Hyperswarm e efemero e
-  // nao serve para enderecar sinalizacao de voz.
-  | { t: 'hello'; servers: string[]; me: string }
+  /**
+   * Desafio de identidade. O Hyperswarm autentica a chave EFEMERA da conexao,
+   * nao a identidade Concord: sem esta prova, um peer poderia simplesmente
+   * declarar a chave publica de outra pessoa e ser aceito.
+   */
+  | { t: 'auth:challenge'; nonce: string }
+  | { t: 'auth:proof'; publicKey: string; signature: string }
+  | { t: 'hello'; servers: string[] }
   | { t: 'have'; serverId: string; heads: Record<string, number> }
   | { t: 'want'; serverId: string; heads: Record<string, number> }
   // As operacoes viajam cifradas com a chave do servidor.
@@ -20,7 +25,19 @@ export type Message =
   // Sinalizacao WebRTC e presenca de voz, cifradas com a chave do servidor.
   | { t: 'voice'; serverId: string; sealed: SealedPayload }
   // Presenca e efemera: vive na conexao, nunca entra no log.
-  | { t: 'presence'; serverId: string; sealed: SealedPayload };
+  | { t: 'presence'; serverId: string; sealed: SealedPayload }
+  /**
+   * Pedidos que chegam pelo topico pessoal do destinatario. So sao aceitos de
+   * peers que ja provaram a identidade.
+   */
+  | { t: 'friend:request'; displayName: string; avatar: string | null }
+  | { t: 'friend:response'; accepted: boolean; displayName: string }
+  | { t: 'invite:offer'; serverId: string; serverName: string; code: string };
+
+/** Texto assinado na prova de identidade, com rotulo de dominio. */
+export function authMessage(nonce: string): Uint8Array {
+  return new TextEncoder().encode(`concord:auth:v1:${nonce}`);
+}
 
 /** Maior seq conhecido por autor. E o "onde eu parei" de cada log. */
 export type Heads = Record<string, number>;

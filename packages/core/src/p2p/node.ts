@@ -1,11 +1,14 @@
 import { EventEmitter } from 'node:events';
+import { randomBytes } from 'node:crypto';
 import Hyperswarm from 'hyperswarm';
-import { SealedPayload, open, seal, topicFromServerKey } from '../crypto/serverKey';
+import { SealedPayload, inboxTopic, open, seal, topicFromServerKey } from '../crypto/serverKey';
+import { fromHex, sign, verify } from '../identity/keypair';
 import { ConcordStore } from '../store';
 import { Operation } from '../ops/types';
 import {
   FrameDecoder,
   PeerPresence,
+  authMessage,
   PresencePayload,
   PresenceStatus,
   VoiceSignal,
@@ -20,8 +23,10 @@ interface PeerConnection {
   socket: NodeJS.WritableStream & { destroy(): void };
   decoder: FrameDecoder;
   remoteKey: string;
-  /** Chave publica Concord, conhecida so apos o hello. */
+  /** Chave publica Concord, definida SO apos a prova de identidade. */
   identityKey: string | null;
+  /** Nonce que enviamos; a resposta precisa ser assinada sobre ele. */
+  challenge: string | null;
 }
 
 /**
@@ -45,6 +50,10 @@ export class P2PNode extends EventEmitter {
   private myStatus: PresenceStatus = 'ONLINE';
   private myVoiceChannel: string | null = null;
 
+  /** Mensagens esperando o destinatario aparecer e provar quem e. */
+  private readonly pendingInbox = new Map<string, Message[]>();
+  private readonly joinedInboxes = new Set<string>();
+
   constructor(private readonly store: ConcordStore) {
     super();
   }
@@ -60,6 +69,7 @@ export class P2PNode extends EventEmitter {
         decoder: new FrameDecoder(),
         remoteKey,
         identityKey: null,
+        challenge: null,
       };
       this.peers.set(remoteKey, peer);
       this.emit('peer:connect', remoteKey);
@@ -94,17 +104,64 @@ export class P2PNode extends EventEmitter {
       socket.on('close', drop);
       socket.on('error', drop);
 
-      this.announcePresenceTo(peer);
-      this.send(peer, {
-        t: 'hello',
-        servers: this.readableServers(),
-        me: this.store.publicKeyHex,
-      });
+      // Nada de util e enviado antes da prova de identidade: o resto do
+      // protocolo depende de saber com quem estamos falando.
+      peer.challenge = randomBytes(24).toString('hex');
+      this.send(peer, { t: 'auth:challenge', nonce: peer.challenge });
     });
+
+    // O topico proprio e como pedidos de amizade e convites chegam ate nos.
+    const meuTopico = this.swarm.join(inboxTopic(this.store.publicKeyHex), {
+      server: true,
+      client: true,
+    });
+    await meuTopico.flushed();
 
     for (const { serverId } of this.store.knownServerKeys()) {
       await this.joinServer(serverId);
     }
+  }
+
+  /**
+   * Abre o topico pessoal de outro usuario para entregar um pedido.
+   *
+   * A mensagem fica na fila ate aparecer um peer que prove ser o destinatario.
+   * Sem essa espera, o convite poderia ser entregue a qualquer um que estivesse
+   * ouvindo o topico - e o convite carrega a chave do servidor.
+   */
+  async sendToUser(targetPublicKey: string, message: Message): Promise<void> {
+    if (!this.swarm) throw new Error('Rede nao iniciada');
+
+    const jaVerificado = [...this.peers.values()].find(
+      (p) => p.identityKey === targetPublicKey,
+    );
+    if (jaVerificado) {
+      this.send(jaVerificado, message);
+      return;
+    }
+
+    const fila = this.pendingInbox.get(targetPublicKey) ?? [];
+    fila.push(message);
+    this.pendingInbox.set(targetPublicKey, fila);
+
+    if (!this.joinedInboxes.has(targetPublicKey)) {
+      this.joinedInboxes.add(targetPublicKey);
+      const discovery = this.swarm.join(inboxTopic(targetPublicKey), {
+        server: false,
+        client: true,
+      });
+      await discovery.flushed();
+    }
+  }
+
+  /** Entrega o que estava na fila assim que a identidade e confirmada. */
+  private flushInbox(peer: PeerConnection): void {
+    if (!peer.identityKey) return;
+    const fila = this.pendingInbox.get(peer.identityKey);
+    if (!fila || fila.length === 0) return;
+
+    for (const message of fila) this.send(peer, message);
+    this.pendingInbox.delete(peer.identityKey);
   }
 
   /** Servidores cuja chave temos - os unicos que conseguimos ler ou anunciar. */
@@ -121,6 +178,21 @@ export class P2PNode extends EventEmitter {
     this.joined.add(serverId);
     const discovery = this.swarm.join(topicFromServerKey(key), { server: true, client: true });
     await discovery.flushed();
+
+    /*
+     * Reanuncia para quem ja esta conectado.
+     *
+     * O `hello` traz a lista de servidores legiveis e acontece uma vez, logo
+     * apos a verificacao de identidade. Ao aceitar um convite passamos a
+     * conhecer um servidor novo, mas o peer que nos convidou ja trocou o hello
+     * dele - sem este reenvio, ele so descobriria que agora compartilhamos
+     * aquele servidor na proxima reconexao, e o historico nunca chegaria.
+     */
+    for (const peer of this.peers.values()) {
+      if (!peer.identityKey) continue;
+      this.send(peer, { t: 'hello', servers: this.readableServers() });
+      this.announcePresenceTo(peer);
+    }
   }
 
   private send(peer: PeerConnection, message: Message): void {
@@ -140,8 +212,79 @@ export class P2PNode extends EventEmitter {
 
   private handle(peer: PeerConnection, message: Message): void {
     switch (message.t) {
+      case 'auth:challenge': {
+        // Assina o nonce do outro lado para provar que temos a chave privada.
+        if (typeof message.nonce !== 'string' || message.nonce.length > 128) break;
+        this.send(peer, {
+          t: 'auth:proof',
+          publicKey: this.store.publicKeyHex,
+          signature: Buffer.from(
+            sign(authMessage(message.nonce), this.store.identity.privateKey),
+          ).toString('hex'),
+        });
+        break;
+      }
+
+      case 'auth:proof': {
+        if (!peer.challenge) break;
+        if (!/^[0-9a-f]{64}$/.test(message.publicKey ?? '')) break;
+
+        const valida = verify(
+          fromHex(message.signature),
+          authMessage(peer.challenge),
+          fromHex(message.publicKey),
+        );
+        // Assinatura ruim: o peer nao e quem diz ser. Encerrar e mais seguro
+        // que seguir com uma identidade desconhecida.
+        if (!valida) {
+          peer.socket.destroy();
+          break;
+        }
+
+        peer.identityKey = message.publicKey;
+        peer.challenge = null;
+
+        this.announcePresenceTo(peer);
+        this.send(peer, { t: 'hello', servers: this.readableServers() });
+        this.flushInbox(peer);
+        this.emit('peer:verified', peer.identityKey);
+        break;
+      }
+
+      case 'friend:request': {
+        if (!peer.identityKey) break;
+        this.emit('friend:request', {
+          from: peer.identityKey,
+          displayName: String(message.displayName ?? '').slice(0, 64),
+          avatar: typeof message.avatar === 'string' ? message.avatar : null,
+        });
+        break;
+      }
+
+      case 'friend:response': {
+        if (!peer.identityKey) break;
+        this.emit('friend:response', {
+          from: peer.identityKey,
+          accepted: message.accepted === true,
+          displayName: String(message.displayName ?? '').slice(0, 64),
+        });
+        break;
+      }
+
+      case 'invite:offer': {
+        if (!peer.identityKey) break;
+        this.emit('invite:offer', {
+          from: peer.identityKey,
+          serverId: String(message.serverId ?? ''),
+          serverName: String(message.serverName ?? '').slice(0, 64),
+          code: String(message.code ?? ''),
+        });
+        break;
+      }
+
       case 'hello': {
-        peer.identityKey = message.me;
+        // Identidade vem da prova, nunca do que o peer declara.
+        if (!peer.identityKey) break;
         const legiveis = new Set(this.readableServers());
         for (const serverId of message.servers) {
           if (!legiveis.has(serverId)) continue;

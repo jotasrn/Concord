@@ -29,6 +29,7 @@ export class Session {
     private readonly onPresence: (
       snapshot: Record<string, { status: string; voice: string | null }>,
     ) => void = () => {},
+    private readonly onSocial: (evento: string, dados: unknown) => void = () => {},
   ) {
     if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
   }
@@ -90,6 +91,37 @@ export class Session {
     this.node.on('ops:received', ({ serverId }) => this.onOpsReceived(serverId));
     this.node.on('voice:signal', ({ serverId, signal }) => this.onVoiceSignal(serverId, signal));
     this.node.on('presence:update', (snapshot) => this.onPresence(snapshot));
+
+    // Pedido de amizade recebido: guarda como pendente e avisa a interface.
+    this.node.on('friend:request', (r: { from: string; displayName: string; avatar: string | null }) => {
+      const store = this.requireStore();
+      const estado = store.social.upsertFriend(r.from, r.displayName, r.avatar, 'PENDING_IN');
+      this.onSocial('friend:request', { ...r, state: estado });
+    });
+
+    this.node.on('friend:response', (r: { from: string; accepted: boolean; displayName: string }) => {
+      const store = this.requireStore();
+      if (r.accepted) {
+        store.social.upsertFriend(r.from, r.displayName, null, 'ACCEPTED');
+      } else {
+        // Recusa apaga o pendente: manter aumentaria a confusao sem utilidade.
+        store.social.removeFriend(r.from);
+      }
+      this.onSocial('friend:response', r);
+    });
+
+    this.node.on('invite:offer', (r: { from: string; serverId: string; serverName: string; code: string }) => {
+      const store = this.requireStore();
+      // Ja participa: nao ha o que aceitar.
+      if (store.serverKey(r.serverId)) return;
+      store.social.addPendingInvite({
+        serverId: r.serverId,
+        serverName: r.serverName,
+        fromKey: r.from,
+        code: r.code,
+      });
+      this.onSocial('invite:offer', r);
+    });
     await this.node.start();
 
     return identity;
@@ -192,6 +224,78 @@ export class Session {
       status: node?.getStatus() ?? 'OFFLINE',
       peers: node?.presenceSnapshot() ?? {},
     };
+  }
+
+  // ---------- amigos e convites ----------
+
+  listFriends() {
+    return this.requireStore().social.listFriends();
+  }
+
+  listPendingInvites() {
+    return this.requireStore().social.listPendingInvites();
+  }
+
+  /** Envia pedido de amizade para uma chave publica. */
+  async sendFriendRequest(targetKey: string): Promise<void> {
+    const store = this.requireStore();
+    if (!/^[0-9a-f]{64}$/.test(targetKey)) throw new Error('Chave publica invalida');
+    if (targetKey === store.publicKeyHex) throw new Error('Essa e a sua propria chave');
+
+    const perfil = store.profileOf(store.publicKeyHex);
+    store.social.upsertFriend(targetKey, '', null, 'PENDING_OUT');
+
+    await this.requireNode().sendToUser(targetKey, {
+      t: 'friend:request',
+      displayName: perfil?.displayName ?? store.identity.displayName,
+      avatar: perfil?.avatar ?? null,
+    });
+  }
+
+  async respondFriendRequest(targetKey: string, accepted: boolean): Promise<void> {
+    const store = this.requireStore();
+    if (accepted) store.social.upsertFriend(targetKey, store.social.getFriend(targetKey)?.displayName ?? '', null, 'ACCEPTED');
+    else store.social.removeFriend(targetKey);
+
+    const perfil = store.profileOf(store.publicKeyHex);
+    await this.requireNode().sendToUser(targetKey, {
+      t: 'friend:response',
+      accepted,
+      displayName: perfil?.displayName ?? store.identity.displayName,
+    });
+  }
+
+  removeFriend(targetKey: string): void {
+    this.requireStore().social.removeFriend(targetKey);
+  }
+
+  /** Manda um convite de servidor direto para a caixa de entrada do amigo. */
+  async sendServerInvite(serverId: string, targetKey: string): Promise<void> {
+    const store = this.requireStore();
+    const servidor = store.listServers().find((s) => s.id === serverId);
+    if (!servidor) throw new Error('Servidor desconhecido');
+
+    await this.requireNode().sendToUser(targetKey, {
+      t: 'invite:offer',
+      serverId,
+      serverName: servidor.name,
+      code: store.createInvite(serverId),
+    });
+  }
+
+  async acceptServerInvite(serverId: string): Promise<string> {
+    const store = this.requireStore();
+    const convite = store.social.listPendingInvites().find((i) => i.serverId === serverId);
+    if (!convite) throw new Error('Convite nao encontrado');
+
+    const id = store.acceptInvite(convite.code);
+    store.social.removePendingInvite(serverId);
+    await this.requireNode().joinServer(id);
+    return id;
+  }
+
+  declineServerInvite(serverId: string): void {
+    this.requireStore().social.removePendingInvite(serverId);
   }
 
   storageUsage() {

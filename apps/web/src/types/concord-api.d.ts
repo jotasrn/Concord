@@ -46,6 +46,22 @@ export interface PeerPresence {
   voice: string | null;
 }
 
+export interface Friend {
+  userKey: string;
+  displayName: string;
+  avatar: string | null;
+  state: 'PENDING_IN' | 'PENDING_OUT' | 'ACCEPTED';
+  createdAt: number;
+}
+
+export interface PendingInvite {
+  serverId: string;
+  serverName: string;
+  fromKey: string;
+  code: string;
+  createdAt: number;
+}
+
 export interface ResourceSettings {
   maxHeapMb: number | null;
   maxCores: number | null;
@@ -122,6 +138,19 @@ export interface ConcordApi {
     signal(serverId: string, signal: unknown): Promise<boolean>;
     onSignal(handler: (serverId: string, signal: any) => void): () => void;
   };
+  friends: {
+    list(): Promise<Friend[]>;
+    request(targetKey: string): Promise<boolean>;
+    respond(targetKey: string, accepted: boolean): Promise<boolean>;
+    remove(targetKey: string): Promise<boolean>;
+  };
+  serverInvites: {
+    pending(): Promise<PendingInvite[]>;
+    send(serverId: string, targetKey: string): Promise<boolean>;
+    accept(serverId: string): Promise<string>;
+    decline(serverId: string): Promise<boolean>;
+  };
+  onSocialEvent(handler: (evento: string, dados: any) => void): () => void;
   settings: {
     get(): Promise<{ settings: AppSettings; machine: MachineResources }>;
     save(settings: AppSettings): Promise<boolean>;

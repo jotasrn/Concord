@@ -40,6 +40,9 @@ function createSession(): SessionType {
   },
   (snapshot) => {
     window?.webContents.send('presence:update', snapshot);
+  },
+  (evento, dados) => {
+    window?.webContents.send('social:event', evento, dados);
   });
 }
 

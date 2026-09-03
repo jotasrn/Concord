@@ -7,6 +7,8 @@ import { CallPanel } from '../features/voice/CallPanel';
 import { CallStage } from '../features/voice/CallStage';
 import { ProfilePanel } from '../features/profile/ProfilePanel';
 import { StatusPicker } from '../features/profile/StatusPicker';
+import { FriendsPanel } from '../features/friends/FriendsPanel';
+import { RequestsPopup } from '../features/friends/RequestsPopup';
 import { ResourcesPanel } from '../features/settings/ResourcesPanel';
 import { VideoPanel } from '../features/settings/VideoPanel';
 import { ScreenViewer } from '../features/screenshare/ScreenViewer';
@@ -19,7 +21,9 @@ import type {
   ChannelView,
   MemberView,
   MessageView,
+  Friend,
   PeerPresence,
+  PendingInvite,
   PresenceStatus,
   Profile,
   SettableStatus,
@@ -46,6 +50,8 @@ export function AppPage({ profile }: { profile: Profile }) {
   const [status, setStatus] = useState<SettableStatus>('ONLINE');
   const [presencas, setPresencas] = useState<Record<string, PeerPresence>>({});
   const [nomeProprio, setNomeProprio] = useState(profile.displayName);
+  const [pedidosAmizade, setPedidosAmizade] = useState<Friend[]>([]);
+  const [convitesPendentes, setConvitesPendentes] = useState<PendingInvite[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const memberNames = new Map(members.map((m) => [m.userKey, m.displayName]));
@@ -175,6 +181,27 @@ export function AppPage({ profile }: { profile: Profile }) {
       .catch(() => undefined);
     return window.concord.presence.onUpdate(setPresencas);
   }, []);
+
+  const carregarPendencias = useCallback(async () => {
+    try {
+      const [amigos, convites] = await Promise.all([
+        window.concord.friends.list(),
+        window.concord.serverInvites.pending(),
+      ]);
+      setPedidosAmizade(amigos.filter((f) => f.state === 'PENDING_IN'));
+      setConvitesPendentes(convites);
+    } catch {
+      // Sem pendencias visiveis e melhor que quebrar a tela inteira.
+    }
+  }, []);
+
+  useEffect(() => {
+    void carregarPendencias();
+    return window.concord.onSocialEvent((evento) => {
+      void carregarPendencias();
+      sounds.play(evento === 'friend:response' ? 'success' : 'message');
+    });
+  }, [carregarPendencias]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -594,10 +621,48 @@ export function AppPage({ profile }: { profile: Profile }) {
             setNomeProprio(nome);
             if (activeServer) void loadServerContent(activeServer);
           }}
+          servers={servers}
+          presencaDe={presencaDe}
+          onFriendsChanged={() => void carregarPendencias()}
         />
       )}
 
       {/* Telas compartilhadas pelos peers: overlay flutuante no canto inferior direito */}
+      <RequestsPopup
+        friendRequests={pedidosAmizade.map((f) => ({
+          userKey: f.userKey,
+          displayName: f.displayName,
+          avatar: f.avatar,
+        }))}
+        inviteRequests={convitesPendentes.map((c) => ({
+          serverId: c.serverId,
+          serverName: c.serverName,
+          fromKey: c.fromKey,
+          fromName: memberNames.get(c.fromKey) ?? '',
+        }))}
+        onRespondFriend={async (userKey, aceito) => {
+          await window.concord.friends.respond(userKey, aceito);
+          sounds.play(aceito ? 'success' : 'mute');
+          await carregarPendencias();
+        }}
+        onRespondInvite={async (serverId, aceito) => {
+          try {
+            if (aceito) {
+              const id = await window.concord.serverInvites.accept(serverId);
+              sounds.play('success');
+              await loadServers();
+              setActiveServer(id);
+            } else {
+              await window.concord.serverInvites.decline(serverId);
+            }
+          } catch (e) {
+            sounds.play('error');
+            report(e);
+          }
+          await carregarPendencias();
+        }}
+      />
+
       {/* Flutuante so fora do palco: dentro dele as telas ja aparecem na grade. */}
       {aba !== 'call' && (
         <ScreenViewer remoteScreens={call.remoteScreens} memberNames={memberNames} />
@@ -689,6 +754,7 @@ function ChannelGroup({
 
 const ROTULOS_ABA = {
   perfil: 'Meu perfil',
+  amigos: 'Amigos',
   audio: 'Voz',
   video: 'Video',
   recursos: 'Recursos',
@@ -699,19 +765,25 @@ function SettingsModal({
   status,
   onClose,
   onProfileSaved,
+  servers,
+  presencaDe,
+  onFriendsChanged,
 }: {
   profile: Profile;
   status: SettableStatus;
   onClose: () => void;
   onProfileSaved: (displayName: string) => void;
+  servers: ServerView[];
+  presencaDe: (userKey: string) => PresenceStatus;
+  onFriendsChanged: () => void;
 }) {
-  const [tab, setTab] = useState<'perfil' | 'audio' | 'video' | 'recursos'>('perfil');
+  const [tab, setTab] = useState<'perfil' | 'amigos' | 'audio' | 'video' | 'recursos'>('perfil');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
       <div className="panel flex h-[640px] w-full max-w-3xl overflow-hidden">
         <nav className="w-44 shrink-0 space-y-1 border-r border-void-700 bg-void-850 p-3">
-          {(['perfil', 'audio', 'video', 'recursos'] as const).map((t) => (
+          {(['perfil', 'amigos', 'audio', 'video', 'recursos'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -733,6 +805,9 @@ function SettingsModal({
         <div className="flex-1 overflow-y-auto p-6">
           {tab === 'perfil' && (
             <ProfilePanel profile={profile} status={status} onSaved={onProfileSaved} />
+          )}
+          {tab === 'amigos' && (
+            <FriendsPanel servers={servers} presencaDe={presencaDe} onChanged={onFriendsChanged} />
           )}
           {tab === 'audio' && <AudioSettingsPanel />}
           {tab === 'video' && <VideoPanel />}

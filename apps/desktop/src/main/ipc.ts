@@ -151,6 +151,7 @@ export function registerIpc(
   registerScreenIpc();
   registerProfileIpc(session);
   registerSettingsIpc(session, userData, onCallActive);
+  registerSocialIpc(session);
   void getWindow;
 }
 
@@ -307,6 +308,52 @@ export function registerSettingsIpc(
   ipcMain.handle('settings:callActive', (_e, active: boolean) =>
     wrap(() => {
       onCallActive(active);
+      return true;
+    }),
+  );
+}
+
+/** Amizades e convites de servidor. */
+export function registerSocialIpc(session: Session): void {
+  ipcMain.handle('friends:list', () => wrap(() => session.listFriends()));
+
+  ipcMain.handle('friends:request', (_e, targetKey: string) =>
+    wrap(async () => {
+      await session.sendFriendRequest(targetKey.trim().toLowerCase());
+      return true;
+    }),
+  );
+
+  ipcMain.handle('friends:respond', (_e, targetKey: string, accepted: boolean) =>
+    wrap(async () => {
+      await session.respondFriendRequest(targetKey, accepted);
+      return true;
+    }),
+  );
+
+  ipcMain.handle('friends:remove', (_e, targetKey: string) =>
+    wrap(() => {
+      session.removeFriend(targetKey);
+      return true;
+    }),
+  );
+
+  ipcMain.handle('invites:pending', () => wrap(() => session.listPendingInvites()));
+
+  ipcMain.handle('invites:send', (_e, serverId: string, targetKey: string) =>
+    wrap(async () => {
+      await session.sendServerInvite(serverId, targetKey);
+      return true;
+    }),
+  );
+
+  ipcMain.handle('invites:acceptPending', (_e, serverId: string) =>
+    wrap(() => session.acceptServerInvite(serverId)),
+  );
+
+  ipcMain.handle('invites:decline', (_e, serverId: string) =>
+    wrap(() => {
+      session.declineServerInvite(serverId);
       return true;
     }),
   );

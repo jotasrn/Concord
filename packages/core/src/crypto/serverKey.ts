@@ -23,6 +23,21 @@ export function topicFromServerKey(serverKey: Buffer): Buffer {
 }
 
 /**
+ * Topico pessoal de um usuario, derivado da chave publica dele.
+ *
+ * E o endereco por onde chegam pedidos de amizade e convites de servidor: sem
+ * ele, so daria para falar com quem ja compartilha um servidor conosco, e
+ * nunca haveria como iniciar o primeiro contato.
+ *
+ * Como a chave publica e feita para ser divulgada, qualquer um que a tenha
+ * consegue entrar aqui. Por isso nada sensivel e enviado antes de o outro lado
+ * provar que possui a chave privada correspondente.
+ */
+export function inboxTopic(publicKeyHex: string): Buffer {
+  return createHash('sha256').update('concord:inbox:v1:').update(publicKeyHex).digest();
+}
+
+/**
  * Chave de cifragem separada da de topico. Derivar ambas do mesmo segredo por
  * caminhos distintos evita que publicar o topico (que vai para a DHT em texto
  * claro) revele qualquer coisa sobre a chave usada no conteudo.

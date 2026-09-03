@@ -3,6 +3,7 @@ import { Identity } from './identity/keystore';
 import { toHex } from './identity/keypair';
 import { decodeInvite, encodeInvite, generateServerKey } from './crypto/serverKey';
 import { Vault } from './crypto/vault';
+import { SocialStore } from './social';
 import {
   Db,
   currentLamport,
@@ -70,12 +71,15 @@ export class ConcordStore {
   readonly publicKeyHex: string;
   /** Cifra o que vai para o disco. Existe so enquanto a conta esta destrancada. */
   private readonly vault: Vault;
+  /** Amizades e convites pendentes, que vivem fora do log de operacoes. */
+  readonly social: SocialStore;
 
   constructor(dbPath: string, identity: Identity) {
     this.db = openDatabase(dbPath);
     this.identity = identity;
     this.publicKeyHex = toHex(identity.publicKey);
     this.vault = new Vault(identity.privateKey);
+    this.social = new SocialStore(this.db, this.vault);
   }
 
   /** Decifra o conteudo de uma mensagem vindo da projecao. */

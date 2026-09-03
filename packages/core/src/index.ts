@@ -8,3 +8,4 @@ export * from './p2p/protocol';
 export * from './p2p/node';
 export * from './crypto/serverKey';
 export * from './crypto/vault';
+export * from './social';

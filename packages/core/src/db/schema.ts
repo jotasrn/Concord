@@ -106,6 +106,28 @@ CREATE TABLE IF NOT EXISTS server_keys (
   added_at  INTEGER NOT NULL
 );
 
+-- Amizades sao entre duas pessoas, fora de qualquer servidor, entao nao
+-- passam pelo log de operacoes: cada lado guarda a sua copia.
+CREATE TABLE IF NOT EXISTS friends (
+  user_key     TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  avatar       TEXT,
+  -- PENDING_IN: recebemos e ainda nao respondemos
+  -- PENDING_OUT: enviamos e aguardamos
+  -- ACCEPTED: amizade ativa
+  state        TEXT NOT NULL CHECK (state IN ('PENDING_IN', 'PENDING_OUT', 'ACCEPTED')),
+  created_at   INTEGER NOT NULL
+);
+
+-- Convites de servidor recebidos e ainda nao respondidos.
+CREATE TABLE IF NOT EXISTS pending_invites (
+  server_id   TEXT PRIMARY KEY,
+  server_name TEXT NOT NULL,
+  from_key    TEXT NOT NULL,
+  code        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL

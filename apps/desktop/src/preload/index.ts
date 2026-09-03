@@ -90,6 +90,37 @@ const api = {
       return () => ipcRenderer.removeListener('voice:incoming', listener);
     },
   },
+  friends: {
+    list: () =>
+      call<
+        {
+          userKey: string;
+          displayName: string;
+          avatar: string | null;
+          state: 'PENDING_IN' | 'PENDING_OUT' | 'ACCEPTED';
+          createdAt: number;
+        }[]
+      >('friends:list'),
+    request: (targetKey: string) => call<boolean>('friends:request', targetKey),
+    respond: (targetKey: string, accepted: boolean) =>
+      call<boolean>('friends:respond', targetKey, accepted),
+    remove: (targetKey: string) => call<boolean>('friends:remove', targetKey),
+  },
+  serverInvites: {
+    pending: () =>
+      call<
+        { serverId: string; serverName: string; fromKey: string; code: string; createdAt: number }[]
+      >('invites:pending'),
+    send: (serverId: string, targetKey: string) =>
+      call<boolean>('invites:send', serverId, targetKey),
+    accept: (serverId: string) => call<string>('invites:acceptPending', serverId),
+    decline: (serverId: string) => call<boolean>('invites:decline', serverId),
+  },
+  onSocialEvent: (handler: (evento: string, dados: any) => void) => {
+    const listener = (_e: unknown, evento: string, dados: any) => handler(evento, dados);
+    ipcRenderer.on('social:event', listener);
+    return () => ipcRenderer.removeListener('social:event', listener);
+  },
   settings: {
     get: () =>
       call<{

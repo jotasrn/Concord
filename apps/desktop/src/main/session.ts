@@ -237,7 +237,7 @@ export class Session {
   }
 
   /** Envia pedido de amizade para uma chave publica. */
-  async sendFriendRequest(targetKey: string): Promise<void> {
+  async sendFriendRequest(targetKey: string): Promise<'entregue' | 'na-fila'> {
     const store = this.requireStore();
     if (!/^[0-9a-f]{64}$/.test(targetKey)) throw new Error('Chave publica invalida');
     if (targetKey === store.publicKeyHex) throw new Error('Essa e a sua propria chave');
@@ -245,7 +245,7 @@ export class Session {
     const perfil = store.profileOf(store.publicKeyHex);
     store.social.upsertFriend(targetKey, '', null, 'PENDING_OUT');
 
-    await this.requireNode().sendToUser(targetKey, {
+    return this.requireNode().sendToUser(targetKey, {
       t: 'friend:request',
       displayName: perfil?.displayName ?? store.identity.displayName,
       avatar: perfil?.avatar ?? null,
@@ -270,12 +270,12 @@ export class Session {
   }
 
   /** Manda um convite de servidor direto para a caixa de entrada do amigo. */
-  async sendServerInvite(serverId: string, targetKey: string): Promise<void> {
+  async sendServerInvite(serverId: string, targetKey: string): Promise<'entregue' | 'na-fila'> {
     const store = this.requireStore();
     const servidor = store.listServers().find((s) => s.id === serverId);
     if (!servidor) throw new Error('Servidor desconhecido');
 
-    await this.requireNode().sendToUser(targetKey, {
+    return this.requireNode().sendToUser(targetKey, {
       t: 'invite:offer',
       serverId,
       serverName: servidor.name,

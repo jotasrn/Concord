@@ -43,10 +43,12 @@ export function FriendsPanel({
     setError(null);
     setAviso(null);
     try {
-      await window.concord.friends.request(chave.trim());
+      const status = await window.concord.friends.request(chave.trim());
       setChave('');
       setAviso(
-        'Pedido na fila. Ele chega assim que a pessoa estiver com o app aberto - nao ha servidor guardando recado.',
+        status === 'entregue'
+          ? 'Pedido ENTREGUE. Ele ja apareceu na tela da pessoa.'
+          : 'Pedido na fila: ainda nao encontramos a pessoa na rede. Ele sai sozinho quando ela abrir o app - nao ha servidor guardando recado.',
       );
       await recarregar();
       onChanged();
@@ -61,8 +63,12 @@ export function FriendsPanel({
     setError(null);
     setAviso(null);
     try {
-      await window.concord.serverInvites.send(serverId, userKey);
-      setAviso('Convite enviado.');
+      const status = await window.concord.serverInvites.send(serverId, userKey);
+      setAviso(
+        status === 'entregue'
+          ? 'Convite ENTREGUE.'
+          : 'Convite na fila: sai quando a pessoa abrir o app.',
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Nao foi possivel convidar');
     }

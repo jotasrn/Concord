@@ -123,7 +123,7 @@ export interface ConcordApi {
   };
   members: {
     list(serverId: string): Promise<MemberView[]>;
-    add(serverId: string, userKey: string, displayName: string): Promise<boolean>;
+    add(serverId: string, userKey: string, displayName: string): Promise<'entregue' | 'na-fila'>;
   };
   channels: {
     list(serverId: string): Promise<ChannelView[]>;
@@ -140,13 +140,13 @@ export interface ConcordApi {
   };
   friends: {
     list(): Promise<Friend[]>;
-    request(targetKey: string): Promise<boolean>;
+    request(targetKey: string): Promise<'entregue' | 'na-fila'>;
     respond(targetKey: string, accepted: boolean): Promise<boolean>;
     remove(targetKey: string): Promise<boolean>;
   };
   serverInvites: {
     pending(): Promise<PendingInvite[]>;
-    send(serverId: string, targetKey: string): Promise<boolean>;
+    send(serverId: string, targetKey: string): Promise<'entregue' | 'na-fila'>;
     accept(serverId: string): Promise<string>;
     decline(serverId: string): Promise<boolean>;
   };

@@ -19,6 +19,9 @@ import {
   operationsMissingFor,
 } from './protocol';
 
+/** Quanto esperar a conexao antes de dizer que a mensagem ficou na fila. */
+const DELIVERY_WAIT_MS = 12_000;
+
 interface PeerConnection {
   socket: NodeJS.WritableStream & { destroy(): void };
   decoder: FrameDecoder;
@@ -53,6 +56,8 @@ export class P2PNode extends EventEmitter {
   /** Mensagens esperando o destinatario aparecer e provar quem e. */
   private readonly pendingInbox = new Map<string, Message[]>();
   private readonly joinedInboxes = new Set<string>();
+  /** Avisa quem esta esperando para saber se a entrega saiu. */
+  private readonly pendingResolvers = new Map<string, () => void>();
 
   constructor(private readonly store: ConcordStore) {
     super();
@@ -129,7 +134,10 @@ export class P2PNode extends EventEmitter {
    * Sem essa espera, o convite poderia ser entregue a qualquer um que estivesse
    * ouvindo o topico - e o convite carrega a chave do servidor.
    */
-  async sendToUser(targetPublicKey: string, message: Message): Promise<void> {
+  async sendToUser(
+    targetPublicKey: string,
+    message: Message,
+  ): Promise<'entregue' | 'na-fila'> {
     if (!this.swarm) throw new Error('Rede nao iniciada');
 
     const jaVerificado = [...this.peers.values()].find(
@@ -137,12 +145,37 @@ export class P2PNode extends EventEmitter {
     );
     if (jaVerificado) {
       this.send(jaVerificado, message);
-      return;
+      return 'entregue';
     }
 
     const fila = this.pendingInbox.get(targetPublicKey) ?? [];
     fila.push(message);
     this.pendingInbox.set(targetPublicKey, fila);
+
+    /*
+     * Espera um pouco antes de responder.
+     *
+     * Achar o peer na DHT e conectar leva alguns segundos. Sem essa espera a
+     * resposta seria sempre "na fila", mesmo quando a entrega acontece logo em
+     * seguida - e o usuario levaria um aviso preocupante sobre algo que ja
+     * funcionou.
+     *
+     * A promessa e registrada ANTES de entrar no topico: o peer pode conectar
+     * e receber a mensagem durante o `flushed()`, e nesse caso nao haveria
+     * ninguem inscrito para saber que a entrega saiu.
+     */
+    const entrega = new Promise<'entregue' | 'na-fila'>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingResolvers.delete(targetPublicKey);
+        resolve('na-fila');
+      }, DELIVERY_WAIT_MS);
+
+      this.pendingResolvers.set(targetPublicKey, () => {
+        clearTimeout(timer);
+        this.pendingResolvers.delete(targetPublicKey);
+        resolve('entregue');
+      });
+    });
 
     if (!this.joinedInboxes.has(targetPublicKey)) {
       this.joinedInboxes.add(targetPublicKey);
@@ -152,6 +185,18 @@ export class P2PNode extends EventEmitter {
       });
       await discovery.flushed();
     }
+
+    return entrega;
+  }
+
+  /** Ja existe conexao verificada com esta pessoa? */
+  isPeerOnline(publicKey: string): boolean {
+    return [...this.peers.values()].some((p) => p.identityKey === publicKey);
+  }
+
+  /** Quantas mensagens ainda esperam entrega, por destinatario. */
+  pendingCount(publicKey: string): number {
+    return this.pendingInbox.get(publicKey)?.length ?? 0;
   }
 
   /** Entrega o que estava na fila assim que a identidade e confirmada. */
@@ -162,6 +207,8 @@ export class P2PNode extends EventEmitter {
 
     for (const message of fila) this.send(peer, message);
     this.pendingInbox.delete(peer.identityKey);
+
+    this.pendingResolvers.get(peer.identityKey)?.();
   }
 
   /** Servidores cuja chave temos - os unicos que conseguimos ler ou anunciar. */

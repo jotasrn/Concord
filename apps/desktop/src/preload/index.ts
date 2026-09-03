@@ -45,7 +45,7 @@ const api = {
         serverId,
       ),
     add: (serverId: string, userKey: string, displayName: string) =>
-      call<boolean>('members:add', serverId, userKey, displayName),
+      call<'entregue' | 'na-fila'>('members:add', serverId, userKey, displayName),
   },
   channels: {
     list: (serverId: string) =>
@@ -101,7 +101,8 @@ const api = {
           createdAt: number;
         }[]
       >('friends:list'),
-    request: (targetKey: string) => call<boolean>('friends:request', targetKey),
+    request: (targetKey: string) =>
+      call<'entregue' | 'na-fila'>('friends:request', targetKey),
     respond: (targetKey: string, accepted: boolean) =>
       call<boolean>('friends:respond', targetKey, accepted),
     remove: (targetKey: string) => call<boolean>('friends:remove', targetKey),
@@ -112,7 +113,7 @@ const api = {
         { serverId: string; serverName: string; fromKey: string; code: string; createdAt: number }[]
       >('invites:pending'),
     send: (serverId: string, targetKey: string) =>
-      call<boolean>('invites:send', serverId, targetKey),
+      call<'entregue' | 'na-fila'>('invites:send', serverId, targetKey),
     accept: (serverId: string) => call<string>('invites:acceptPending', serverId),
     decline: (serverId: string) => call<boolean>('invites:decline', serverId),
   },

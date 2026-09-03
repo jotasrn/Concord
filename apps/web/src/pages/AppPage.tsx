@@ -244,9 +244,9 @@ export function AppPage({ profile }: { profile: Profile }) {
   function addMember() {
     if (!activeServer) return;
     setPrompt({
-      title: 'Adicionar amigo',
+      title: 'Adicionar ao servidor',
       description:
-        'Peca a chave publica dele (fica em Configuracoes > Minha conta) e cole aqui.',
+        'Cole a chave publica da pessoa. Ela recebe o convite na hora se estiver online; se nao, assim que abrir o app.',
       fields: [
         { name: 'key', label: 'Chave publica', placeholder: '64 caracteres hex', multiline: true },
         { name: 'nome', label: 'Nome', placeholder: 'Como ele aparece na lista' },
@@ -254,8 +254,18 @@ export function AppPage({ profile }: { profile: Profile }) {
       confirmLabel: 'Adicionar',
       onSubmit: async ({ key, nome }) => {
         try {
-          await window.concord.members.add(activeServer, key.trim(), nome.trim() || 'amigo');
+          const status = await window.concord.members.add(
+            activeServer,
+            key.trim(),
+            nome.trim() || 'amigo',
+          );
           await loadServerContent(activeServer);
+          sounds.play('success');
+          setError(
+            status === 'entregue'
+              ? null
+              : 'Adicionado. O convite ficou na fila: a pessoa ainda nao foi encontrada na rede e vai receber quando abrir o app.',
+          );
         } catch (e) {
           report(e);
         }
@@ -553,7 +563,7 @@ export function AppPage({ profile }: { profile: Profile }) {
           {currentServer && (
             <button
               onClick={addMember}
-              title="Adicionar amigo pela chave publica"
+              title="Adicionar alguem ao servidor"
               className="rounded p-1 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
             >
               <UserPlus className="h-4 w-4" />

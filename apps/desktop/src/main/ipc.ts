@@ -90,13 +90,25 @@ export function registerIpc(
     wrap(() => session.requireStore().listMembers(serverId)),
   );
 
+  /**
+   * Adiciona alguem ao servidor E entrega o convite.
+   *
+   * Publicar so a operacao nao adianta: sem a chave do servidor a pessoa nao
+   * entra no topico e nunca recebe o log onde consta que virou membro. Antes
+   * o botao parecia funcionar e nada chegava do outro lado.
+   */
   ipcMain.handle('members:add', (_e, serverId: string, userKey: string, displayName: string) =>
-    wrap(() =>
-      session.publish(serverId, () => {
-        session.requireStore().addMember(serverId, userKey, displayName);
+    wrap(async () => {
+      const chave = userKey.trim().toLowerCase();
+      if (!/^[0-9a-f]{64}$/.test(chave)) throw new Error('Chave publica invalida');
+
+      await session.publish(serverId, () => {
+        session.requireStore().addMember(serverId, chave, displayName);
         return true;
-      }),
-    ),
+      });
+
+      return session.sendServerInvite(serverId, chave);
+    }),
   );
 
   ipcMain.handle('channels:list', (_e, serverId: string) =>
@@ -318,10 +330,7 @@ export function registerSocialIpc(session: Session): void {
   ipcMain.handle('friends:list', () => wrap(() => session.listFriends()));
 
   ipcMain.handle('friends:request', (_e, targetKey: string) =>
-    wrap(async () => {
-      await session.sendFriendRequest(targetKey.trim().toLowerCase());
-      return true;
-    }),
+    wrap(() => session.sendFriendRequest(targetKey.trim().toLowerCase())),
   );
 
   ipcMain.handle('friends:respond', (_e, targetKey: string, accepted: boolean) =>
@@ -341,10 +350,7 @@ export function registerSocialIpc(session: Session): void {
   ipcMain.handle('invites:pending', () => wrap(() => session.listPendingInvites()));
 
   ipcMain.handle('invites:send', (_e, serverId: string, targetKey: string) =>
-    wrap(async () => {
-      await session.sendServerInvite(serverId, targetKey);
-      return true;
-    }),
+    wrap(() => session.sendServerInvite(serverId, targetKey.trim().toLowerCase())),
   );
 
   ipcMain.handle('invites:acceptPending', (_e, serverId: string) =>

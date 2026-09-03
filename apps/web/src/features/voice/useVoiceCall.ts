@@ -128,9 +128,12 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
 
     if (videoTracks.length > 0) {
       videoElements.current.set(peerKey, stream);
-      // Forca re-render para atualizar remoteScreens.
-      setState((s) => ({ ...s }));
+    } else {
+      // Sem video: o peer parou de transmitir.
+      videoElements.current.delete(peerKey);
     }
+    // Re-render para o painel refletir quem esta transmitindo agora.
+    setState((s) => ({ ...s }));
   }, []);
 
   const desanexarAudio = useCallback((peerKey: string) => {
@@ -307,7 +310,7 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
         const audio = screenRef.current.getAudioTrack();
         if (audio) await transport.addSystemAudioTrack(audio);
 
-        sounds.play('success');
+        sounds.play('screenStart');
         setState((s) => ({
           ...s,
           screenSharing: true,
@@ -341,7 +344,7 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
     await transportRef.current?.removeVideoTrack();
     await transportRef.current?.removeSystemAudioTrack();
     await screenRef.current.stop();
-    sounds.play('leave');
+    sounds.play('screenStop');
     setState((s) => ({
       ...s,
       screenSharing: false,
@@ -422,8 +425,18 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
     };
   }, []);
 
-  /** Streams de video remotos ativos (peers compartilhando a tela). */
-  const remoteScreens = new Map(videoElements.current);
+  /**
+   * Telas remotas ativas.
+   *
+   * Filtra por faixa viva: um peer que parou de transmitir deixa o stream no
+   * mapa, e sem esta checagem continuaria aparecendo como se ainda estivesse
+   * compartilhando.
+   */
+  const remoteScreens = new Map(
+    [...videoElements.current].filter(([, stream]) =>
+      stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted),
+    ),
+  );
 
   return {
     state,

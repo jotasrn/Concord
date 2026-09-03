@@ -185,6 +185,8 @@ if (!app.requestSingleInstanceLock()) {
     markQuitting();
     setCallActive(false);
     destroyTray();
+    const { destroyOverlay } = require('./overlay') as typeof import('./overlay');
+    destroyOverlay();
     void appSession?.shutdown();
   });
 }

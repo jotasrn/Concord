@@ -164,6 +164,7 @@ export function registerIpc(
   registerProfileIpc(session);
   registerSettingsIpc(session, userData, onCallActive);
   registerSocialIpc(session);
+  registerOverlayIpc();
   void getWindow;
 }
 
@@ -320,6 +321,28 @@ export function registerSettingsIpc(
   ipcMain.handle('settings:callActive', (_e, active: boolean) =>
     wrap(() => {
       onCallActive(active);
+      return true;
+    }),
+  );
+}
+
+/** Overlay flutuante que aparece sobre jogos. */
+export function registerOverlayIpc(): void {
+  const { updateOverlay, destroyOverlay } =
+    require('./overlay') as typeof import('./overlay');
+
+  ipcMain.handle(
+    'overlay:update',
+    (_e, participants: import('./overlay').OverlayParticipant[], visivel: boolean) =>
+      wrap(() => {
+        updateOverlay(participants, visivel);
+        return true;
+      }),
+  );
+
+  ipcMain.handle('overlay:hide', () =>
+    wrap(() => {
+      destroyOverlay();
       return true;
     }),
   );

@@ -122,6 +122,19 @@ const api = {
     ipcRenderer.on('social:event', listener);
     return () => ipcRenderer.removeListener('social:event', listener);
   },
+  overlay: {
+    update: (
+      participants: {
+        key: string;
+        name: string;
+        avatar: string | null;
+        speaking: boolean;
+        muted: boolean;
+      }[],
+      visivel: boolean,
+    ) => call<boolean>('overlay:update', participants, visivel),
+    hide: () => call<boolean>('overlay:hide'),
+  },
   settings: {
     get: () =>
       call<{

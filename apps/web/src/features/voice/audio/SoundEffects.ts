@@ -16,7 +16,10 @@ export type SoundName =
   | 'unmute'
   | 'deafen'
   | 'error'
-  | 'success';
+  | 'success'
+  | 'screenStart'
+  | 'screenStop'
+  | 'messageSent';
 
 interface Tone {
   /** Frequencias em Hz, tocadas em sequencia. */
@@ -50,6 +53,11 @@ const TONES: Record<SoundName, Tone> = {
   // Erro: segunda menor descendente, dissonante de proposito.
   error: { notes: [415.3, 311.13], noteDuration: 0.11, type: 'sawtooth', gain: 0.1 },
   success: { notes: [659.25, 987.77], noteDuration: 0.07, type: 'sine', gain: 0.14 },
+  // Transmissao começando: subida decidida, distinta do som de entrar na call.
+  screenStart: { notes: [493.88, 622.25, 830.61], noteDuration: 0.06, type: 'triangle', gain: 0.15 },
+  screenStop: { notes: [830.61, 622.25, 493.88], noteDuration: 0.06, type: 'triangle', gain: 0.13 },
+  // Mensagem enviada: mais discreto que a recebida, para nao cansar quem digita muito.
+  messageSent: { notes: [880.0], noteDuration: 0.04, type: 'sine', gain: 0.07 },
 };
 
 class SoundEffectsPlayer {

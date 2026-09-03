@@ -57,10 +57,16 @@ function colunasPara(total: number): string {
 
 function Video({ stream, mirrored }: { stream: MediaStream; mirrored?: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
+  // O id da faixa entra na dependencia: o MediaStream e o mesmo objeto quando
+  // o peer reinicia a transmissao, e sem isto o elemento continuaria ligado a
+  // faixa antiga, ja encerrada.
+  const trackId = stream.getVideoTracks()[0]?.id;
 
   useEffect(() => {
-    if (ref.current) ref.current.srcObject = stream;
-  }, [stream]);
+    if (!ref.current) return;
+    ref.current.srcObject = stream;
+    void ref.current.play().catch(() => undefined);
+  }, [stream, trackId]);
 
   return (
     <video

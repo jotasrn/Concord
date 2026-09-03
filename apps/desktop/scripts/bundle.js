@@ -59,6 +59,13 @@ async function main() {
     entryPoints: [join(desktopDir, 'src', 'preload', 'index.ts')],
     outfile: join(desktopDir, 'dist', 'preload', 'index.js'),
   });
+
+  // Preload proprio do overlay: superficie minima, so recebe participantes.
+  await build({
+    ...common,
+    entryPoints: [join(desktopDir, 'src', 'preload', 'overlay.ts')],
+    outfile: join(desktopDir, 'dist', 'preload', 'overlay.js'),
+  });
 }
 
 main().catch((error) => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Hash, LogIn, Plus, Radio, Send, Settings, Share2, UserPlus, Volume2 } from 'lucide-react';
 import { Avatar, Button, ErrorBanner, Input } from '../components/ui';
+import { MessageText } from '../components/MessageText';
 import { AudioSettingsPanel } from '../features/voice/AudioSettingsPanel';
 import { PromptModal, PromptRequest } from '../components/PromptModal';
 import { CallPanel } from '../features/voice/CallPanel';
@@ -203,6 +204,64 @@ export function AppPage({ profile }: { profile: Profile }) {
     });
   }, [carregarPendencias]);
 
+  /**
+   * Bolhas flutuantes sobre outros aplicativos.
+   *
+   * So aparecem quando ha chamada ativa E a janela do Concord nao esta em
+   * primeiro plano - dentro do app o palco ja mostra todo mundo, e o overlay
+   * seria ruido duplicado.
+   */
+  useEffect(() => {
+    if (!call.state.channelId) {
+      void window.concord.overlay.update([], false).catch(() => undefined);
+      return;
+    }
+
+    const emPrimeiroPlano = () => document.hasFocus();
+
+    const enviar = () => {
+      const lista = [
+        {
+          key: profile.publicKey,
+          name: nomeProprio,
+          avatar: meuAvatar,
+          speaking: Boolean(call.state.audio?.transmitting) && !call.state.muted,
+          muted: call.state.muted,
+        },
+        ...call.state.participants.map((p) => ({
+          key: p.key,
+          name: p.name,
+          avatar: members.find((m) => m.userKey === p.key)?.avatar ?? null,
+          speaking: false,
+          muted: false,
+        })),
+      ];
+      void window.concord.overlay.update(lista, !emPrimeiroPlano()).catch(() => undefined);
+    };
+
+    enviar();
+    // Intervalo curto para o anel de quem fala acompanhar a voz.
+    const id = setInterval(enviar, 250);
+    window.addEventListener('focus', enviar);
+    window.addEventListener('blur', enviar);
+
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', enviar);
+      window.removeEventListener('blur', enviar);
+      void window.concord.overlay.update([], false).catch(() => undefined);
+    };
+  }, [
+    call.state.channelId,
+    call.state.audio?.transmitting,
+    call.state.muted,
+    call.state.participants,
+    members,
+    meuAvatar,
+    nomeProprio,
+    profile.publicKey,
+  ]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
@@ -318,6 +377,7 @@ export function AppPage({ profile }: { profile: Profile }) {
     setDraft('');
     try {
       await window.concord.messages.send(activeServer, activeChannel, content);
+      sounds.play('messageSent');
       await loadMessages(activeChannel);
     } catch (e) {
       report(e);
@@ -524,9 +584,7 @@ export function AppPage({ profile }: { profile: Profile }) {
                   </time>
                   {m.editedAt && <span className="text-[10px] text-ink-400">(editada)</span>}
                 </div>
-                <p className="selectable whitespace-pre-wrap break-words text-sm text-ink-200">
-                  {m.content}
-                </p>
+                <MessageText content={m.content} />
               </div>
             </article>
           ))}

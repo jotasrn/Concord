@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
@@ -8,6 +9,16 @@ export default defineConfig({
   // file://, onde "/assets/..." resolveria para a raiz do disco e a janela
   // abriria preta, sem erro visivel.
   base: './',
+  build: {
+    rollupOptions: {
+      // O overlay e uma pagina separada: janela propria, sem React nem o
+      // bundle do app, para pesar o minimo possivel sobre um jogo.
+      input: {
+        index: resolve(__dirname, 'index.html'),
+        overlay: resolve(__dirname, 'overlay.html'),
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

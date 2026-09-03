@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
+  Expand,
   Maximize2,
   Minimize2,
   Monitor,
@@ -85,9 +86,15 @@ function Viewer({
   const stats = useInboundStats(videoRef.current, expanded || showStats);
   const temAudio = screen.stream.getAudioTracks().length > 0;
 
+  // Depende do id da faixa: ao reiniciar a transmissao o stream e o mesmo
+  // objeto, e sem isto o video ficaria preso na faixa encerrada.
+  const trackId = screen.stream.getVideoTracks()[0]?.id;
+
   useEffect(() => {
-    if (videoRef.current) videoRef.current.srcObject = screen.stream;
-  }, [screen.stream]);
+    if (!videoRef.current) return;
+    videoRef.current.srcObject = screen.stream;
+    void videoRef.current.play().catch(() => undefined);
+  }, [screen.stream, trackId]);
 
   // Zoom volta ao normal ao sair do fullscreen: um zoom preso na miniatura
   // deixaria o tile inutilizavel.
@@ -108,6 +115,7 @@ function Viewer({
         setZoom(1);
         setPan({ x: 0, y: 0 });
       }
+      if (e.key.toLowerCase() === 'f') void toggleFullscreen();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -132,6 +140,23 @@ function Viewer({
       x: dragStart.current.panX + (e.clientX - dragStart.current.x),
       y: dragStart.current.panY + (e.clientY - dragStart.current.y),
     });
+  }
+
+  /**
+   * Tela cheia de verdade, ocupando o monitor.
+   *
+   * O modo "expandido" preenche apenas a janela do app, o que ainda deixa a
+   * barra de titulo e o resto do sistema a vista - pouco util para assistir a
+   * uma transmissao.
+   */
+  async function toggleFullscreen() {
+    const alvo = containerRef.current?.parentElement ?? containerRef.current;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else if (alvo) await alvo.requestFullscreen();
+    } catch {
+      // Sem tela cheia, o modo expandido continua disponivel.
+    }
   }
 
   async function togglePip() {
@@ -196,7 +221,7 @@ function Viewer({
             {screen.peerName} &mdash; tela compartilhada
           </span>
           <span className="mr-2 text-[10px] text-ink-400">
-            Ctrl+roda para zoom &bull; 0 reseta &bull; Esc sai
+            Ctrl+roda zoom &bull; 0 reseta &bull; F tela cheia &bull; Esc sai
           </span>
           <button
             onClick={() => setZoom((z) => Math.max(1, z - 0.25))}
@@ -216,6 +241,13 @@ function Viewer({
             <ZoomIn className="h-3.5 w-3.5" />
           </button>
           {controles}
+          <button
+            onClick={toggleFullscreen}
+            title="Tela cheia — tecla F"
+            className="rounded p-1 text-ink-400 hover:bg-void-700 hover:text-violet-300"
+          >
+            <Expand className="h-3.5 w-3.5" />
+          </button>
           <button
             onClick={() => setExpanded(false)}
             className="rounded p-1 text-ink-400 hover:bg-void-700 hover:text-ink-100"

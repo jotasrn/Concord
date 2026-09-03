@@ -102,8 +102,28 @@ export class PeerToPeerTransport implements VoiceTransport {
 
     pc.ontrack = (event) => {
       for (const track of event.streams[0]?.getTracks() ?? [event.track]) {
-        if (!stream.getTracks().includes(track)) stream.addTrack(track);
+        if (stream.getTracks().includes(track)) continue;
+
+        /*
+         * Faixa morta precisa sair do stream.
+         *
+         * Sem isto, quando o peer para e recomeca a transmitir, a faixa
+         * encerrada continua no MediaStream e o elemento <video> segue preso
+         * nela - a imagem so voltava se a chamada fosse refeita do zero.
+         */
+        const remover = () => {
+          if (stream.getTracks().includes(track)) stream.removeTrack(track);
+          this.events.onStream(peerKey, stream);
+        };
+        track.addEventListener('ended', remover);
+        // 'mute' cobre o caso em que o remetente para de enviar sem encerrar
+        // a faixa, que e o que acontece ao remover o sender do lado dele.
+        track.addEventListener('mute', remover);
+        track.addEventListener('unmute', () => this.events.onStream(peerKey, stream));
+
+        stream.addTrack(track);
       }
+
       // Receptores so existem depois da midia chegar; e aqui que o alvo do
       // jitter buffer pode ser aplicado.
       tuneAllReceivers(pc, this.latency.jitterTarget);

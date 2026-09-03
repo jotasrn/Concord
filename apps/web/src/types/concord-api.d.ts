@@ -151,6 +151,19 @@ export interface ConcordApi {
     decline(serverId: string): Promise<boolean>;
   };
   onSocialEvent(handler: (evento: string, dados: any) => void): () => void;
+  overlay: {
+    update(
+      participants: {
+        key: string;
+        name: string;
+        avatar: string | null;
+        speaking: boolean;
+        muted: boolean;
+      }[],
+      visivel: boolean,
+    ): Promise<boolean>;
+    hide(): Promise<boolean>;
+  };
   settings: {
     get(): Promise<{ settings: AppSettings; machine: MachineResources }>;
     save(settings: AppSettings): Promise<boolean>;

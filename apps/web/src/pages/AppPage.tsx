@@ -558,6 +558,7 @@ export function AppPage({ profile }: { profile: Profile }) {
             onStopScreenShare={() => void call.stopScreenShare()}
             onTogglePause={() => void call.toggleScreenPause()}
             onSwitchSource={() => setPicker('trocar')}
+            onReconnect={() => void call.reconnect()}
           />
         ) : (
           <>

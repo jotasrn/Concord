@@ -39,7 +39,12 @@ interface PeerEntry {
   polite: boolean;
   makingOffer: boolean;
   pendingCandidates: RTCIceCandidateInit[];
+  /** Conta o tempo em disconnected antes de forcar a renegociacao. */
+  recoveryTimer: ReturnType<typeof setTimeout> | null;
 }
+
+/** Quanto esperar a conexao voltar sozinha antes de reiniciar o ICE. */
+const RECOVERY_DELAY_MS = 4000;
 
 /**
  * Malha P2P: uma RTCPeerConnection por participante.
@@ -91,6 +96,7 @@ export class PeerToPeerTransport implements VoiceTransport {
       polite: this.selfKey < peerKey,
       makingOffer: false,
       pendingCandidates: [],
+      recoveryTimer: null,
     };
 
     if (this.localTrack) pc.addTrack(this.localTrack);
@@ -105,20 +111,21 @@ export class PeerToPeerTransport implements VoiceTransport {
         if (stream.getTracks().includes(track)) continue;
 
         /*
-         * Faixa morta precisa sair do stream.
+         * So 'ended' encerra a faixa de verdade.
          *
-         * Sem isto, quando o peer para e recomeca a transmitir, a faixa
-         * encerrada continua no MediaStream e o elemento <video> segue preso
-         * nela - a imagem so voltava se a chamada fosse refeita do zero.
+         * 'mute' NAO significa fim: em WebRTC ele dispara sempre que a midia
+         * para de chegar por um instante - um engasgo de rede basta - e volta
+         * com 'unmute'. Remover a faixa nesse evento matava a transmissao de
+         * forma permanente ao primeiro soluco, e a imagem so voltava refazendo
+         * a chamada.
+         *
+         * Os dois eventos apenas avisam a interface, que decide o que mostrar.
          */
-        const remover = () => {
+        track.addEventListener('ended', () => {
           if (stream.getTracks().includes(track)) stream.removeTrack(track);
           this.events.onStream(peerKey, stream);
-        };
-        track.addEventListener('ended', remover);
-        // 'mute' cobre o caso em que o remetente para de enviar sem encerrar
-        // a faixa, que e o que acontece ao remover o sender do lado dele.
-        track.addEventListener('mute', remover);
+        });
+        track.addEventListener('mute', () => this.events.onStream(peerKey, stream));
         track.addEventListener('unmute', () => this.events.onStream(peerKey, stream));
 
         stream.addTrack(track);
@@ -162,9 +169,32 @@ export class PeerToPeerTransport implements VoiceTransport {
 
     pc.onconnectionstatechange = () => {
       this.events.onConnectionChange(peerKey, pc.connectionState);
+
       if (pc.connectionState === 'failed') {
-        // ICE restart: rede mudou (wifi -> cabo, troca de IP).
+        // Falha definitiva: renegocia os candidatos imediatamente.
         void pc.restartIce();
+        return;
+      }
+
+      /*
+       * 'disconnected' e a armadilha: a conexao para de entregar midia mas
+       * nunca chega a 'failed', entao nada se recupera sozinho e a imagem fica
+       * congelada ate a chamada ser refeita.
+       *
+       * Damos um tempo para ela voltar por conta propria - o que costuma
+       * acontecer em quedas curtas - e so entao forcamos a renegociacao.
+       */
+      if (pc.connectionState === 'disconnected') {
+        if (entry.recoveryTimer) clearTimeout(entry.recoveryTimer);
+        entry.recoveryTimer = setTimeout(() => {
+          if (pc.connectionState === 'disconnected') void pc.restartIce();
+        }, RECOVERY_DELAY_MS);
+        return;
+      }
+
+      if (pc.connectionState === 'connected' && entry.recoveryTimer) {
+        clearTimeout(entry.recoveryTimer);
+        entry.recoveryTimer = null;
       }
     };
 
@@ -259,6 +289,7 @@ export class PeerToPeerTransport implements VoiceTransport {
   private removePeer(peerKey: string): void {
     const entry = this.peers.get(peerKey);
     if (!entry) return;
+    if (entry.recoveryTimer) clearTimeout(entry.recoveryTimer);
     entry.pc.close();
     this.peers.delete(peerKey);
     this.stats.reset(peerKey);
@@ -444,6 +475,28 @@ export class PeerToPeerTransport implements VoiceTransport {
       resultado.set(key, readLatency(await entry.pc.getStats()));
     }
     return resultado;
+  }
+
+  /**
+   * Forca a renegociacao com todos os peers.
+   *
+   * Saida manual para quando a imagem trava e a recuperacao automatica ainda
+   * nao agiu - evita ter que sair e voltar da chamada, que era a unica opcao.
+   */
+  async reconnectAll(): Promise<void> {
+    for (const entry of this.peers.values()) {
+      if (entry.recoveryTimer) {
+        clearTimeout(entry.recoveryTimer);
+        entry.recoveryTimer = null;
+      }
+      try {
+        entry.pc.restartIce();
+      } catch {
+        // Um peer que falha nao impede os demais de reconectar.
+      }
+    }
+    // Reanuncia a presenca: quem nao respondeu ao ICE restart recria a conexao.
+    if (this.channelId) this.send({ kind: 'join', channelId: this.channelId });
   }
 
   peerKeys(): string[] {

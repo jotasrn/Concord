@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Clock,
+  RefreshCw,
   Gauge,
   Headphones,
   HeadphoneOff,
@@ -181,6 +182,7 @@ export function CallStage({
   onStopScreenShare,
   onTogglePause,
   onSwitchSource,
+  onReconnect,
 }: {
   state: CallState;
   selfName: string;
@@ -193,6 +195,7 @@ export function CallStage({
   onStopScreenShare: () => void;
   onTogglePause: () => void;
   onSwitchSource: () => void;
+  onReconnect: () => void;
 }) {
   const [focado, setFocado] = useState<string | null>(null);
   const duracao = useCallDuration(state.joinedAt);
@@ -388,6 +391,14 @@ export function CallStage({
             </button>
           </>
         )}
+
+        <button
+          onClick={onReconnect}
+          title="Reconectar — use se a imagem ou o audio travarem"
+          className="rounded-full bg-void-700 p-3 text-ink-200 transition hover:bg-void-600 hover:text-violet-300"
+        >
+          <RefreshCw className="h-5 w-5" />
+        </button>
 
         <button
           onClick={onLeave}

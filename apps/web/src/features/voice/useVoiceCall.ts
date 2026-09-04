@@ -306,6 +306,12 @@ export function useVoiceCall(
     });
   }, []);
 
+  /** Reconecta sem sair da chamada. */
+  const reconnect = useCallback(async () => {
+    await transportRef.current?.reconnectAll();
+    sounds.play('success');
+  }, []);
+
   const setTransmitMode = useCallback((mode: TransmitMode) => {
     engineRef.current?.setTransmitMode(mode);
   }, []);
@@ -458,7 +464,10 @@ export function useVoiceCall(
    */
   const remoteScreens = new Map(
     [...videoElements.current].filter(([, stream]) =>
-      stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted),
+      // Apenas readyState: `muted` fica true durante qualquer interrupcao
+      // momentanea do fluxo, e usar isso aqui fazia a tela sumir a cada
+      // oscilacao de rede em vez de apenas congelar por um instante.
+      stream.getVideoTracks().some((t) => t.readyState === 'live'),
     ),
   );
 
@@ -468,6 +477,7 @@ export function useVoiceCall(
     leave,
     toggleMute,
     toggleDeafen,
+    reconnect,
     setTransmitMode,
     startScreenShare,
     stopScreenShare,

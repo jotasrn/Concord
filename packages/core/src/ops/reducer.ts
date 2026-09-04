@@ -9,6 +9,9 @@ import {
   ChannelUpdatePayload,
   MemberJoinPayload,
   MemberRolePayload,
+  MemberNickPayload,
+  MemberKickPayload,
+  MemberMutePayload,
   MessageCreatePayload,
   MessageDeletePayload,
   MessageEditPayload,
@@ -182,8 +185,64 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
       if (server?.owner_key === p.userKey) return 'o dono nao pode ser rebaixado';
 
       const changed = db
-        .prepare('UPDATE members SET permissions = ? WHERE server_id = ? AND user_key = ?')
-        .run(p.permissions, op.serverId, p.userKey);
+        .prepare(
+          'UPDATE members SET permissions = ?, role_name = ? WHERE server_id = ? AND user_key = ?',
+        )
+        .run(p.permissions, p.roleName ?? null, op.serverId, p.userKey);
+      return changed.changes > 0 ? null : 'membro nao encontrado';
+    }
+
+    case 'member.nick': {
+      const p = op.payload as MemberNickPayload;
+      const perms = memberPermissions(db, op.serverId, op.authorKey);
+      if (!perms) return 'autor nao e membro';
+
+      // Cada um pode mudar o proprio apelido; mexer no dos outros exige
+      // permissao de gerenciar membros.
+      const proprio = p.userKey === op.authorKey;
+      if (!proprio && !hasPerm(perms, Permission.MANAGE_MEMBERS)) {
+        return 'sem MANAGE_MEMBERS';
+      }
+
+      const changed = db
+        .prepare('UPDATE members SET nickname = ? WHERE server_id = ? AND user_key = ?')
+        .run(p.nickname, op.serverId, p.userKey);
+      return changed.changes > 0 ? null : 'membro nao encontrado';
+    }
+
+    case 'member.kick': {
+      const p = op.payload as MemberKickPayload;
+      const perms = memberPermissions(db, op.serverId, op.authorKey);
+      if (!perms) return 'autor nao e membro';
+      if (!hasPerm(perms, Permission.KICK_MEMBERS)) return 'sem KICK_MEMBERS';
+
+      const server = db.prepare('SELECT owner_key FROM servers WHERE id = ?').get(op.serverId) as
+        | { owner_key: string }
+        | undefined;
+      // O dono nao pode ser expulso do proprio servidor.
+      if (server?.owner_key === p.userKey) return 'o dono nao pode ser expulso';
+      if (p.userKey === op.authorKey) return 'use sair do servidor';
+
+      const changed = db
+        .prepare('DELETE FROM members WHERE server_id = ? AND user_key = ?')
+        .run(op.serverId, p.userKey);
+      return changed.changes > 0 ? null : 'membro nao encontrado';
+    }
+
+    case 'member.mute': {
+      const p = op.payload as MemberMutePayload;
+      const perms = memberPermissions(db, op.serverId, op.authorKey);
+      if (!perms) return 'autor nao e membro';
+      if (!hasPerm(perms, Permission.MANAGE_MEMBERS)) return 'sem MANAGE_MEMBERS';
+
+      const server = db.prepare('SELECT owner_key FROM servers WHERE id = ?').get(op.serverId) as
+        | { owner_key: string }
+        | undefined;
+      if (server?.owner_key === p.userKey) return 'o dono nao pode ser silenciado';
+
+      const changed = db
+        .prepare('UPDATE members SET muted = ? WHERE server_id = ? AND user_key = ?')
+        .run(p.muted ? 1 : 0, op.serverId, p.userKey);
       return changed.changes > 0 ? null : 'membro nao encontrado';
     }
 

@@ -165,6 +165,7 @@ export function registerIpc(
   registerSettingsIpc(session, userData, onCallActive);
   registerSocialIpc(session);
   registerOverlayIpc();
+  registerModerationIpc(session);
   void getWindow;
 }
 
@@ -384,6 +385,69 @@ export function registerSocialIpc(session: Session): void {
     wrap(() => {
       session.declineServerInvite(serverId);
       return true;
+    }),
+  );
+}
+
+/** Moderacao: apelido, cargo, silenciar e expulsar. */
+export function registerModerationIpc(session: Session): void {
+  ipcMain.handle(
+    'members:nick',
+    (_e, serverId: string, userKey: string, nickname: string | null) =>
+      wrap(() =>
+        session.publish(serverId, () => {
+          session.requireStore().setNickname(serverId, userKey, nickname);
+          return true;
+        }),
+      ),
+  );
+
+  ipcMain.handle(
+    'members:role',
+    (_e, serverId: string, userKey: string, permissions: string, roleName: string) =>
+      wrap(() =>
+        session.publish(serverId, () => {
+          session.requireStore().setRole(serverId, userKey, BigInt(permissions), roleName);
+          return true;
+        }),
+      ),
+  );
+
+  ipcMain.handle('members:mute', (_e, serverId: string, userKey: string, muted: boolean) =>
+    wrap(() =>
+      session.publish(serverId, () => {
+        session.requireStore().setMuted(serverId, userKey, muted);
+        return true;
+      }),
+    ),
+  );
+
+  ipcMain.handle('members:kick', (_e, serverId: string, userKey: string) =>
+    wrap(() =>
+      session.publish(serverId, () => {
+        session.requireStore().kickMember(serverId, userKey);
+        return true;
+      }),
+    ),
+  );
+
+  /** Cargos disponiveis e a lista de permissoes, para a interface montar o menu. */
+  ipcMain.handle('members:roles', () =>
+    wrap(() => {
+      const { ROLE_PRESETS, PERMISSION_LIST } = require('@concord/core') as typeof import('@concord/core');
+      return {
+        presets: ROLE_PRESETS.map((r) => ({
+          id: r.id,
+          label: r.label,
+          description: r.description,
+          permissions: r.permissions.toString(),
+        })),
+        permissions: PERMISSION_LIST.map((p) => ({
+          flag: String(p.flag),
+          label: p.label,
+          hint: p.hint,
+        })),
+      };
     }),
   );
 }

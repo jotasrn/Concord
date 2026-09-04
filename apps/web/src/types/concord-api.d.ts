@@ -28,7 +28,11 @@ export interface MessageView {
 export interface MemberView {
   userKey: string;
   displayName: string;
+  nickname: string | null;
+  profileName: string;
   permissions: string;
+  roleName: string | null;
+  muted: boolean;
   avatar: string | null;
   bio: string | null;
 }
@@ -123,6 +127,14 @@ export interface ConcordApi {
   };
   members: {
     list(serverId: string): Promise<MemberView[]>;
+    nick(serverId: string, userKey: string, nickname: string | null): Promise<boolean>;
+    role(serverId: string, userKey: string, permissions: string, roleName: string): Promise<boolean>;
+    mute(serverId: string, userKey: string, muted: boolean): Promise<boolean>;
+    kick(serverId: string, userKey: string): Promise<boolean>;
+    roles(): Promise<{
+      presets: { id: string; label: string; description: string; permissions: string }[];
+      permissions: { flag: string; label: string; hint: string }[];
+    }>;
     add(serverId: string, userKey: string, displayName: string): Promise<'entregue' | 'na-fila'>;
   };
   channels: {

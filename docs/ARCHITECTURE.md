@@ -1,140 +1,178 @@
 # Arquitetura
 
-## Visao geral
+Concord é um app de comunicação **P2P local-first**: não existe servidor. Cada
+pessoa instala um executável, cria a conta na própria máquina e replica os
+dados dos outros. Quem volta de offline puxa dos peers o que perdeu.
+
+## Os três processos
 
 ```
-                    ┌─────────────────────────────┐
-                    │   Browser (React + Vite)    │
-                    │  ┌───────────────────────┐  │
-                    │  │ WebRTCService         │  │
-                    │  │ (PeerConnections)     │  │
-                    │  └───────────┬───────────┘  │
-                    └──────┬───────┼──────────────┘
-                    REST/WS│       │ midia (SRTP)
-                           │       │
-        ┌──────────────────▼───┐   │   ┌──────────────┐
-        │   NestJS API         │   └──▶│    coturn    │
-        │  ┌────────────────┐  │       │  STUN/TURN   │
-        │  │ REST modules   │  │       └──────────────┘
-        │  │ WS gateways    │  │
-        │  └───────┬────────┘  │
-        └──────┬───┴───────────┘
-               │           │
-        ┌──────▼─────┐ ┌───▼──────┐
-        │ PostgreSQL │ │  Redis   │
-        │  (Prisma)  │ │ presence │
-        └────────────┘ └──────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Electron: processo PRINCIPAL (Node)                      │
+│  Onde vive tudo o que é privilegiado                      │
+│                                                           │
+│   apps/desktop/src/main/  ──usa──▶  packages/core/        │
+│                                     identidade, log,      │
+│                                     SQLite, rede P2P      │
+└───────────────────────────┬──────────────────────────────┘
+                            │ IPC (única ponte)
+┌───────────────────────────┴──────────────────────────────┐
+│  Electron: processo RENDERER (Chromium, sem Node)         │
+│  apps/web/  ── React, WebRTC, captura de áudio e tela     │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│  Janela do OVERLAY (transparente, sobre jogos)            │
+│  apps/web/overlay.html + src/overlay.ts                   │
+└──────────────────────────────────────────────────────────┘
 ```
 
-Ponto central: **a midia nunca passa pela API**. O NestJS transporta apenas sinalizacao
-(SDP e ICE candidates). Audio, video e tela trafegam direto entre os navegadores, com o coturn
-atuando como relay apenas quando a conexao direta falha.
+O renderer **não tem acesso ao Node**. Tudo que toca disco, rede ou sistema
+passa pelo IPC, que valida a entrada no processo principal.
 
-## Decisoes tecnicas
+## Regra central: operação vs. efêmero
 
-### 1. Monorepo com npm workspaces (nao Turborepo/Nx)
+Duas categorias de dado, com destinos opostos:
 
-O projeto tem dois apps e quatro packages. Workspaces nativos resolvem o link entre eles sem
-adicionar uma camada de build orchestration que so se paga em repositorios grandes. Se o tempo de
-build virar problema, Turborepo entra depois sem alterar a estrutura de pastas.
+| | Vai para o log assinado | Vive só na conexão |
+|---|---|---|
+| **O quê** | mensagens, canais, membros, perfil | status, quem está em call, sinalização WebRTC |
+| **Por quê** | precisa sobreviver e replicar | registrar isso encheria o log de ruído para sempre |
 
-### 2. Contratos compartilhados em `packages/types`
+**Estado que não é operação não existe** — não replica e some quando a projeção
+é reconstruída.
 
-Nomes de eventos WebSocket e formatos de payload sao a maior fonte de bugs silenciosos em apps
-realtime: um typo em `'message:create'` no cliente nao quebra o build, so cria um canal morto.
-Por isso os nomes de evento vivem em objetos `as const` compartilhados entre web e API.
+---
 
-`packages/types` **nao** usa a lib `dom` do TypeScript porque tambem e compilado no lado Node.
-Por isso os tipos WebRTC (`RtcSessionDescription`, `RtcIceCandidate`) sao declarados localmente
-espelhando as interfaces do DOM, em vez de importar `RTCSessionDescriptionInit`.
+## `packages/core/` — o núcleo (roda no processo principal)
 
-### 3. Permissoes como bitmask BigInt
+O coração do app. Não depende de Electron nem de React.
 
-`Role.permissions` e um `BIGINT` no Postgres, com as flags de `Permission` combinadas por OR.
-Verificar permissao vira uma operacao de bit em vez de um join por linha de permissao, e a
-checagem `ADMINISTRATOR` curto-circuita todas as outras (`packages/shared/src/permissions.ts`).
+### `identity/`
+| Arquivo | Para quê |
+|---|---|
+| `keypair.ts` | Ed25519 pelo crypto nativo do Node: assinar e verificar. Gera o `#a3f9` do seu nome |
+| `keystore.ts` | Frase de recuperação (12 palavras) e keystore cifrado com scrypt + AES-256-GCM |
+| `identity.test.ts` | 11 testes, incluindo recuperar a conta em outra máquina só com a frase |
 
-A validacao roda **sempre no backend**. O frontend usa as mesmas funcoes apenas para esconder
-controles — nunca como fonte de verdade.
+### `crypto/`
+| Arquivo | Para quê |
+|---|---|
+| `serverKey.ts` | Chave por servidor, tópico da DHT, cifra das operações, código de convite, tópico pessoal (caixa de entrada) |
+| `vault.ts` | Cifra o que vai para o disco. A chave sai da sua identidade e só existe depois do desbloqueio |
+| `*.test.ts` | Verificam que o `.db` em disco não contém mensagem legível |
 
-### 4. WebRTC: malha (mesh) no MVP, SFU depois
+### `ops/` — o log replicado
+| Arquivo | Para quê |
+|---|---|
+| `types.ts` | As operações possíveis e o formato de cada payload |
+| `canonical.ts` | Serialização com chaves ordenadas. Sem isso a mesma operação geraria assinaturas diferentes em cada máquina |
+| `sign.ts` | Assina, verifica e define a **ordem total** (lamport, autor, seq) que faz todos convergirem |
+| `validate.ts` | Formato e limites do que vem da rede. Substitui os casts, que não verificam nada em runtime |
+| `reducer.ts` | Aplica as operações ao SQLite conferindo permissão a cada uma |
+| `ops.test.ts` | 13 testes, incluindo convergência de dois peers com ordens diferentes |
+| `hostile.test.ts` | 6 testes com peer mal-intencionado: payload nulo, tipo errado, mensagem gigante |
 
-Este e o principal trade-off do projeto e o maior risco tecnico.
+### `db/`
+| Arquivo | Para quê |
+|---|---|
+| `schema.ts` | Tabelas. Separa o **log** (fonte da verdade) da **projeção** (cache da interface) |
+| `database.ts` | Abertura, migração de colunas e acesso ao log |
 
-**Malha (P2P full mesh)** — cada participante abre uma `RTCPeerConnection` com cada outro.
-Para N participantes cada cliente mantem N-1 conexoes e envia seu video N-1 vezes.
+### `p2p/`
+| Arquivo | Para quê |
+|---|---|
+| `protocol.ts` | Mensagens trocadas entre peers e o enquadramento por linha |
+| `node.ts` | Descoberta pela DHT, prova de identidade, sincronização, presença e caixa de entrada |
+| `hyperswarm.d.ts` | Tipos da lib, que não publica os próprios |
 
-| Participantes | Uploads por cliente | Viabilidade                       |
-| ------------- | ------------------- | --------------------------------- |
-| 2–4           | 1–3                 | Confortavel                       |
-| 5–6           | 4–5                 | Limite pratico com video ligado   |
-| 8+            | 7+                  | Inviavel sem SFU                  |
+### Raiz
+| Arquivo | Para quê |
+|---|---|
+| `store.ts` | **A única porta de entrada.** A interface nunca fala com SQLite ou rede direto |
+| `social.ts` | Amizades e convites pendentes — ficam fora do log porque não pertencem a servidor nenhum |
 
-O MVP usa malha porque: o caso de uso alvo e um squad de amigos (2–6 pessoas), nao precisa de
-servidor de midia, e a latencia e a menor possivel. Voz pura escala melhor que video — audio
-Opus custa ~40 kbps contra ~1–2 Mbps de video.
+---
 
-Quando o requisito passar de ~6 participantes com video, a saida e um **SFU** (mediasoup ou
-LiveKit): cada cliente envia um unico stream ao servidor, que redistribui. A `WebRTCService`
-isola a criacao de PeerConnections exatamente para que essa troca nao vaze para os componentes
-React.
+## `apps/desktop/` — o processo principal
 
-### 5. Redis como camada de presence e escala horizontal
+### `src/main/`
+| Arquivo | Para quê |
+|---|---|
+| `index.ts` | Cria a janela, aplica limites de recurso, bloqueia DevTools e navegação externa |
+| `diagnostics.ts` | **Carregado primeiro.** Sem ele, uma falha de import vira uma caixa "Error" sem rastro |
+| `session.ts` | Estado vivo: identidade destrancada, banco e nó P2P |
+| `ipc.ts` | Todos os canais entre interface e núcleo, num envelope `{ ok, data }` |
+| `settings.ts` | Preferências, limite de memória e afinidade de CPU |
+| `background.ts` | Bandeja, esconder ao fechar e bloqueio de suspensão durante chamadas |
+| `overlay.ts` | Janela transparente com as bolinhas de quem está falando |
 
-Presence nao vai para o Postgres: e estado efemero com escrita altissima. Fica em Redis com TTL.
-Quando a API rodar em mais de uma instancia, o `@socket.io/redis-adapter` propaga eventos entre
-elas — por isso o Redis ja e uma dependencia de primeira classe desde a Fase 1, e nao um
-"otimizacao futura".
+### `src/preload/`
+| Arquivo | Para quê |
+|---|---|
+| `index.ts` | A ponte. Define exatamente o que o renderer pode chamar — não há `require` do lado da interface |
+| `overlay.ts` | Ponte mínima do overlay: só recebe a lista de participantes |
 
-### 6. Envelope de resposta uniforme
+### `scripts/`
+| Arquivo | Para quê |
+|---|---|
+| `bundle.js` | Empacota o main com esbuild. Sem sourcemap em produção — o mapa carrega o TypeScript original inteiro |
+| `stage.js` | Monta um diretório isolado para empacotar. **Sem isso o electron-builder apaga as devDependencies da raiz** |
+| `copy-renderer.js` | Leva o bundle do Vite para dentro do app |
+| `afterPack.js` | Grava os fuses no binário: sem `RUN_AS_NODE`, sem depurador, com validação de integridade |
 
-Todo endpoint REST responde `{ success: true, data }` (via `TransformInterceptor`) ou
-`{ success: false, message, code }` (via `HttpExceptionFilter`). O cliente sempre discrimina pelo
-mesmo campo, e erros internos nunca vazam stack trace — sao logados no servidor e substituidos
-por uma mensagem generica.
+---
 
-### 7. Boot em modo degradado
+## `apps/web/` — a interface
 
-`PrismaService.onModuleInit` captura falha de conexao inicial e deixa a API subir mesmo assim.
-Sem isso, o container morre em loop quando o Postgres demora a ficar pronto e o operador nao tem
-como consultar `/api/health` para descobrir *qual* dependencia falhou. Queries continuam falhando
-normalmente enquanto o banco estiver fora — nao ha fallback silencioso.
+### `pages/`
+`OnboardingPage.tsx` (criar conta, frase, desbloquear) e `AppPage.tsx` (a tela
+principal: servidores, canais, chat, membros).
 
-## Camadas do backend
+### `features/voice/`
+| Arquivo | Para quê |
+|---|---|
+| `audio/AudioEngine.ts` | Pipeline: filtro → equalizador → compressor → porta de transmissão |
+| `audio/VoiceActivityDetector.ts` | Detecta fala com limiar **relativo ao ruído medido** — um valor fixo dispararia com ventilador |
+| `audio/AudioMeter.ts` | RMS, pico, piso de ruído e clipping |
+| `audio/Equalizer.ts`, `NoiseSuppression.ts` | Presets de voz e supressão plugável |
+| `audio/SoundEffects.ts` | Sons sintetizados por osciladores, sem arquivo de áudio |
+| `transport/PeerToPeerTransport.ts` | Malha WebRTC, um par por participante |
+| `transport/lowLatency.ts` | Ajustes que cortam o atraso: jitter buffer, `ptime` do Opus |
+| `useVoiceCall.ts` | Junta áudio, transporte e sinalização numa chamada |
+| `CallStage.tsx` | O palco em grade com todos, incluindo sua própria transmissão |
 
-```
-src/
-├── modules/          Um modulo por dominio (auth, users, servers, channels, ...)
-│   └── <dominio>/
-│       ├── dto/              Validacao de entrada (class-validator)
-│       ├── *.controller.ts   REST
-│       ├── *.gateway.ts      WebSocket
-│       └── *.service.ts      Regra de negocio
-├── common/           Prisma, Redis, filtros, interceptors
-├── guards/           JwtAuthGuard, PermissionsGuard
-└── config/           Leitura tipada de env
-```
+### `features/screenshare/`
+| Arquivo | Para quê |
+|---|---|
+| `ScreenShareEngine.ts` | Captura com controle de qualidade, pausa e troca de fonte |
+| `presets.ts` | Perfis Jogo, Vídeo, Código, Economia — decidem o que sacrificar sob pressão |
+| `SourcePicker.tsx` | Seletor com miniaturas |
+| `ScreenViewer.tsx` | Visualizador com zoom, PiP e tela cheia |
 
-Regra: gateways e controllers nao contem regra de negocio, apenas orquestram services. Isso
-permite que a mesma operacao (ex: criar mensagem) seja exposta por REST e por WebSocket sem
-duplicacao.
+### `features/profile/`, `friends/`, `settings/`
+Perfil e status; pedidos de amizade e popup; configurações de recursos e vídeo.
 
-## Camadas do frontend
+### `components/`
+| Arquivo | Para quê |
+|---|---|
+| `ui.tsx` | Botão, campo, avatar com status |
+| `MessageText.tsx` | Links clicáveis. Só `http`/`https` — outros esquemas permitiriam `javascript:` numa mensagem |
+| `PromptModal.tsx` | Substitui `window.prompt()`, que o Electron não implementa |
 
-```
-src/
-├── features/     Fatias verticais (auth, chat, servers, voice, video, friends)
-├── services/     Clientes de API e do socket
-├── stores/       Zustand - estado global (sessao, presence, estado da call)
-├── components/   Design system e componentes de UI
-└── lib/          Instancias de axios/socket, WebRTCService
-```
+---
 
-A logica de WebRTC fica em `services`/`lib`, nunca dentro de componentes: um `useEffect` que cria
-PeerConnections e reexecutado em cada render do StrictMode e vaza conexoes.
+## Sobras da primeira versão
 
-## Observabilidade (preparado, nao implementado)
+O projeto começou como cliente-servidor e virou P2P. Restaram andaimes:
 
-O `HttpExceptionFilter` centraliza o tratamento de erro e e o ponto de entrada natural para o
-Sentry. As metricas de Prometheus entram como um `MetricsModule` com um interceptor global. Nada
-na arquitetura atual impede isso — mas nada disso esta implementado ainda.
+| Item | Situação |
+|---|---|
+| `packages/ui/` | **Vazio e não usado** por ninguém |
+| `packages/shared/` | **Não é importado** em lugar nenhum |
+| `packages/types/` | Usado só por `core` e `shared` |
+| 13 pastas com `.gitkeep` | Da estrutura planejada na Fase 1; várias nunca receberam arquivo |
+| `.env.example` | Da época do Postgres/Redis; hoje não há variável de ambiente |
+
+Nada disso quebra o app, mas dá a impressão de que existe mais estrutura do que
+realmente existe.

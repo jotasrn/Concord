@@ -62,8 +62,21 @@ const ESTADO_INICIAL: CallState = {
  * Os elementos <audio> dos peers sao criados fora do React: recria-los a cada
  * render interromperia a reproducao.
  */
-export function useVoiceCall(serverId: string | null, memberNames: Map<string, string>) {
+export function useVoiceCall(
+  serverId: string | null,
+  memberNames: Map<string, string>,
+  /**
+   * Quem esta silenciado pela moderacao.
+   *
+   * A aplicacao acontece AQUI, em quem recebe: nao existe autoridade central
+   * que impeca alguem de transmitir, entao o que garante o silencio e cada
+   * cliente honesto nao reproduzir o audio de quem esta na lista.
+   */
+  mutedKeys: Set<string> = new Set(),
+) {
   const [state, setState] = useState<CallState>(ESTADO_INICIAL);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const engineRef = useRef<AudioEngine | null>(null);
   const transportRef = useRef<PeerToPeerTransport | null>(null);
   const audioElements = useRef(new Map<string, HTMLAudioElement>());
@@ -71,6 +84,8 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
   const screenRef = useRef(new ScreenShareEngine());
   const serverIdRef = useRef(serverId);
   serverIdRef.current = serverId;
+  const mutedRef = useRef(mutedKeys);
+  mutedRef.current = mutedKeys;
 
   const nomeDe = useCallback(
     (key: string) => memberNames.get(key) ?? `${key.slice(0, 8)}...`,
@@ -123,6 +138,8 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
         audioElements.current.set(peerKey, element);
       }
       element.srcObject = stream;
+      // Silenciado pela moderacao nao toca, mesmo que continue enviando.
+      element.muted = mutedRef.current.has(peerKey);
       void element.play().catch(() => undefined);
     }
 
@@ -416,6 +433,13 @@ export function useVoiceCall(serverId: string | null, memberNames: Map<string, s
     }, 2000);
     return () => clearInterval(id);
   }, [state.screenSharing]);
+
+  // A lista de silenciados muda por operacao vinda da rede; reaplica na hora.
+  useEffect(() => {
+    for (const [peerKey, element] of audioElements.current) {
+      element.muted = mutedKeys.has(peerKey) || stateRef.current.deafened;
+    }
+  }, [mutedKeys]);
 
   useEffect(() => {
     return () => {

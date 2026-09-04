@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Hash, LogIn, Plus, Radio, Send, Settings, Share2, UserPlus, Volume2 } from 'lucide-react';
+import { Hash, LogIn, MicOff, Plus, Radio, Send, Settings, Share2, UserPlus, Volume2 } from 'lucide-react';
 import { Avatar, Button, ErrorBanner, Input } from '../components/ui';
 import { MessageText } from '../components/MessageText';
 import { AudioSettingsPanel } from '../features/voice/AudioSettingsPanel';
@@ -10,6 +10,7 @@ import { ProfilePanel } from '../features/profile/ProfilePanel';
 import { StatusPicker } from '../features/profile/StatusPicker';
 import { FriendsPanel } from '../features/friends/FriendsPanel';
 import { RequestsPopup } from '../features/friends/RequestsPopup';
+import { MemberMenu } from '../features/members/MemberMenu';
 import { ResourcesPanel } from '../features/settings/ResourcesPanel';
 import { VideoPanel } from '../features/settings/VideoPanel';
 import { ScreenViewer } from '../features/screenshare/ScreenViewer';
@@ -53,10 +54,13 @@ export function AppPage({ profile }: { profile: Profile }) {
   const [nomeProprio, setNomeProprio] = useState(profile.displayName);
   const [pedidosAmizade, setPedidosAmizade] = useState<Friend[]>([]);
   const [convitesPendentes, setConvitesPendentes] = useState<PendingInvite[]>([]);
+  const [membroAberto, setMembroAberto] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const memberNames = new Map(members.map((m) => [m.userKey, m.displayName]));
-  const call = useVoiceCall(activeServer, memberNames);
+  // Silenciados pela moderacao: a chamada aplica isso em quem recebe.
+  const silenciados = new Set(members.filter((m) => m.muted).map((m) => m.userKey));
+  const call = useVoiceCall(activeServer, memberNames, silenciados);
 
   // O proprio perfil sai da lista de membros, que ja vem com avatar e bio.
   const meuMembro = members.find((m) => m.userKey === profile.publicKey);
@@ -96,6 +100,19 @@ export function AppPage({ profile }: { profile: Profile }) {
     }
     return dentro;
   };
+
+  /**
+   * Minhas permissoes no servidor atual. Serve so para esconder botoes: quem
+   * decide de fato e o reducer ao aplicar a operacao.
+   */
+  const minhasPermissoes = meuMembro?.permissions ?? '0';
+  const temPermissao = (flag: number) => {
+    const bits = BigInt(minhasPermissoes);
+    if (bits & BigInt(1 << 10)) return true; // ADMINISTRATOR
+    return (bits & BigInt(flag)) === BigInt(flag);
+  };
+  const donoDoServidor = servers.find((s) => s.id === activeServer)?.ownerKey ?? null;
+  const souDono = donoDoServidor === profile.publicKey;
 
   const report = (e: unknown) => setError(e instanceof Error ? e.message : 'Erro inesperado');
 
@@ -638,10 +655,11 @@ export function AppPage({ profile }: { profile: Profile }) {
             .map((m) => {
               const presenca = presencaDe(m.userKey);
               return (
-                <div
+                <button
                   key={m.userKey}
-                  title={m.bio ?? undefined}
-                  className={`flex items-center gap-2 rounded px-2 py-1.5 transition ${
+                  onClick={() => setMembroAberto(m.userKey)}
+                  title={m.bio ?? 'Ver perfil e opcoes'}
+                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition hover:bg-void-700 ${
                     presenca === 'OFFLINE' ? 'opacity-45' : ''
                   }`}
                 >
@@ -659,13 +677,40 @@ export function AppPage({ profile }: { profile: Profile }) {
                         #{m.userKey.slice(0, 4)}
                       </span>
                     </p>
-                    {m.bio && <p className="truncate text-[10px] text-ink-400">{m.bio}</p>}
+                    {m.roleName && m.roleName !== 'Membro' ? (
+                      <p className="truncate text-[10px] text-violet-400">{m.roleName}</p>
+                    ) : (
+                      m.bio && <p className="truncate text-[10px] text-ink-400">{m.bio}</p>
+                    )}
                   </div>
-                </div>
+                  {m.muted && (
+                    <span title="Silenciado no servidor">
+                      <MicOff className="h-3 w-3 shrink-0 text-status-dnd" />
+                    </span>
+                  )}
+                </button>
               );
             })}
         </div>
       </aside>
+
+      {membroAberto && activeServer && (() => {
+        const alvo = members.find((m) => m.userKey === membroAberto);
+        if (!alvo) return null;
+        return (
+          <MemberMenu
+            serverId={activeServer}
+            member={alvo}
+            presenca={presencaDe(alvo.userKey)}
+            souDono={souDono}
+            ehDono={alvo.userKey === donoDoServidor}
+            possoGerenciar={temPermissao(1 << 7)}
+            possoExpulsar={temPermissao(1 << 9)}
+            onClose={() => setMembroAberto(null)}
+            onChanged={() => void loadServerContent(activeServer)}
+          />
+        );
+      })()}
 
       {picker && (
         <SourcePicker

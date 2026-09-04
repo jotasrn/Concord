@@ -44,6 +44,19 @@ const api = {
         'members:list',
         serverId,
       ),
+    nick: (serverId: string, userKey: string, nickname: string | null) =>
+      call<boolean>('members:nick', serverId, userKey, nickname),
+    role: (serverId: string, userKey: string, permissions: string, roleName: string) =>
+      call<boolean>('members:role', serverId, userKey, permissions, roleName),
+    mute: (serverId: string, userKey: string, muted: boolean) =>
+      call<boolean>('members:mute', serverId, userKey, muted),
+    kick: (serverId: string, userKey: string) =>
+      call<boolean>('members:kick', serverId, userKey),
+    roles: () =>
+      call<{
+        presets: { id: string; label: string; description: string; permissions: string }[];
+        permissions: { flag: string; label: string; hint: string }[];
+      }>('members:roles'),
     add: (serverId: string, userKey: string, displayName: string) =>
       call<'entregue' | 'na-fila'>('members:add', serverId, userKey, displayName),
   },

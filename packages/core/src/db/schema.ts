@@ -60,6 +60,11 @@ CREATE TABLE IF NOT EXISTS members (
   user_key     TEXT    NOT NULL,
   display_name TEXT    NOT NULL,
   permissions  TEXT    NOT NULL,
+  -- Apelido no servidor. Tem prioridade sobre o nome do perfil na exibicao.
+  nickname     TEXT,
+  role_name    TEXT,
+  -- Silenciado pela moderacao: quem recebe nao reproduz o audio.
+  muted        INTEGER NOT NULL DEFAULT 0,
   joined_at    INTEGER NOT NULL,
   PRIMARY KEY (server_id, user_key),
   FOREIGN KEY (server_id) REFERENCES servers (id) ON DELETE CASCADE

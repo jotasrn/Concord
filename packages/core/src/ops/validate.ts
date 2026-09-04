@@ -90,7 +90,18 @@ const VALIDATORS: Record<OpType, Validator> = {
     isString(p.displayName, LIMITS.NAME) &&
     isOptionalString(p.inviteCode, LIMITS.INVITE_CODE),
 
-  'member.role': (p) => isPublicKey(p.userKey) && isPermissionMask(p.permissions),
+  'member.role': (p) =>
+    isPublicKey(p.userKey) &&
+    isPermissionMask(p.permissions) &&
+    (p.roleName === undefined || isString(p.roleName, LIMITS.NAME)),
+
+  'member.nick': (p) =>
+    isPublicKey(p.userKey) && (p.nickname === null || isString(p.nickname, LIMITS.NAME)),
+
+  'member.kick': (p) =>
+    isPublicKey(p.userKey) && (p.reason === null || isOptionalString(p.reason, LIMITS.TOPIC)),
+
+  'member.mute': (p) => isPublicKey(p.userKey) && typeof p.muted === 'boolean',
 
   'channel.create': (p) =>
     isString(p.channelId, LIMITS.ID) &&

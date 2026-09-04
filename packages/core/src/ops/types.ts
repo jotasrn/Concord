@@ -13,6 +13,9 @@ export type OpType =
   | 'user.profile'
   | 'member.join'
   | 'member.role'
+  | 'member.nick'
+  | 'member.kick'
+  | 'member.mute'
   | 'channel.create'
   | 'channel.update'
   | 'channel.delete'
@@ -65,6 +68,39 @@ export interface MemberRolePayload {
   userKey: string;
   /** Bitmask de permissoes, serializado como string por ser BigInt. */
   permissions: string;
+  /** Nome do cargo, so para exibicao. As permissoes reais estao no bitmask. */
+  roleName?: string;
+}
+
+/**
+ * Apelido dentro de um servidor.
+ *
+ * Separado do perfil: o perfil e o que a pessoa declara sobre si, e vale em
+ * todo lugar. O apelido e local ao servidor e pode ser definido por quem tem
+ * MANAGE_MEMBERS - ou pela propria pessoa sobre si mesma.
+ */
+export interface MemberNickPayload {
+  userKey: string;
+  /** null remove o apelido e volta a exibir o nome do perfil. */
+  nickname: string | null;
+}
+
+export interface MemberKickPayload {
+  userKey: string;
+  reason: string | null;
+}
+
+/**
+ * Silenciamento no servidor.
+ *
+ * Nao existe autoridade central que impeca alguem de transmitir. O que torna
+ * isto efetivo e a aplicacao no RECEPTOR: todo cliente que respeita o log
+ * silencia o audio de quem esta marcado. Um cliente modificado ainda pode
+ * enviar, mas ninguem reproduz.
+ */
+export interface MemberMutePayload {
+  userKey: string;
+  muted: boolean;
 }
 
 export interface ChannelCreatePayload {
@@ -108,6 +144,9 @@ export type OpPayload =
   | UserProfilePayload
   | MemberJoinPayload
   | MemberRolePayload
+  | MemberNickPayload
+  | MemberKickPayload
+  | MemberMutePayload
   | ChannelCreatePayload
   | ChannelUpdatePayload
   | ChannelDeletePayload

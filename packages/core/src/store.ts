@@ -48,8 +48,15 @@ export interface ServerView {
 
 export interface MemberView {
   userKey: string;
+  /** Nome ja resolvido: apelido do servidor, senao nome do perfil. */
   displayName: string;
+  /** Apelido cru, para a interface saber se ha um definido. */
+  nickname: string | null;
+  /** Nome do perfil que a propria pessoa declarou. */
+  profileName: string;
   permissions: string;
+  roleName: string | null;
+  muted: boolean;
   avatar: string | null;
   bio: string | null;
 }
@@ -256,6 +263,31 @@ export class ConcordStore {
     this.commit('member.join', serverId, { userKey, displayName, inviteCode: null });
   }
 
+  /** Apelido no servidor. Passe null para voltar ao nome do perfil. */
+  setNickname(serverId: string, userKey: string, nickname: string | null): void {
+    this.commit('member.nick', serverId, { userKey, nickname: nickname?.trim() || null });
+  }
+
+  setRole(serverId: string, userKey: string, permissions: bigint, roleName: string): void {
+    this.commit('member.role', serverId, {
+      userKey,
+      permissions: permissions.toString(),
+      roleName,
+    });
+  }
+
+  kickMember(serverId: string, userKey: string, reason: string | null = null): void {
+    this.commit('member.kick', serverId, { userKey, reason });
+  }
+
+  /**
+   * Silencia no servidor. Quem recebe deixa de reproduzir o audio, entao vale
+   * mesmo que o cliente do outro lado ignore a marcacao.
+   */
+  setMuted(serverId: string, userKey: string, muted: boolean): void {
+    this.commit('member.mute', serverId, { userKey, muted });
+  }
+
   createChannel(
     serverId: string,
     name: string,
@@ -378,7 +410,8 @@ export class ConcordStore {
   listMembers(serverId: string): MemberView[] {
     return this.db
       .prepare(
-        `SELECT m.user_key, m.display_name, m.permissions, u.avatar, u.bio
+        `SELECT m.user_key, m.display_name, m.nickname, m.permissions, m.role_name, m.muted,
+                u.avatar, u.bio, u.display_name AS profile_name
          FROM members m LEFT JOIN users u ON u.user_key = m.user_key
          WHERE m.server_id = ? ORDER BY m.joined_at`,
       )
@@ -387,14 +420,26 @@ export class ConcordStore {
         const row = r as {
           user_key: string;
           display_name: string;
+          nickname: string | null;
           permissions: string;
+          role_name: string | null;
+          muted: number;
           avatar: string | null;
           bio: string | null;
+          profile_name: string | null;
         };
+
+        // Precedencia: apelido do servidor > nome que a pessoa declarou no
+        // perfil > nome dado por quem a adicionou.
+        const profileName = row.profile_name || row.display_name;
         return {
           userKey: row.user_key,
-          displayName: row.display_name,
+          displayName: row.nickname || profileName,
+          nickname: row.nickname,
+          profileName,
           permissions: row.permissions,
+          roleName: row.role_name,
+          muted: row.muted === 1,
           avatar: row.avatar,
           bio: row.bio,
         };

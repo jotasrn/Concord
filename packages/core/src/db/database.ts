@@ -17,6 +17,13 @@ function addMissingColumns(db: Db): void {
       (db.prepare(`PRAGMA table_info(${tabela})`).all() as { name: string }[]).map((c) => c.name),
     );
 
+  const members = colunas('members');
+  if (!members.has('nickname')) db.exec('ALTER TABLE members ADD COLUMN nickname TEXT');
+  if (!members.has('role_name')) db.exec('ALTER TABLE members ADD COLUMN role_name TEXT');
+  if (!members.has('muted')) {
+    db.exec('ALTER TABLE members ADD COLUMN muted INTEGER NOT NULL DEFAULT 0');
+  }
+
   const users = colunas('users');
   if (!users.has('bio')) db.exec('ALTER TABLE users ADD COLUMN bio TEXT');
   if (!users.has('self_declared')) {

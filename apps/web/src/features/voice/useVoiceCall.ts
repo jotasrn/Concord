@@ -110,16 +110,7 @@ export function useVoiceCall(
     }));
   }, [nomeDe]);
 
-  const anexarAudio = useCallback((peerKey: string, stream: MediaStream) => {
-    let element = audioElements.current.get(peerKey);
-    if (!element) {
-      element = new Audio();
-      element.autoplay = true;
-      audioElements.current.set(peerKey, element);
-    }
-    element.srcObject = stream;
-    void element.play().catch(() => undefined);
-  }, []);
+
 
   /**
    * Separa tracks de audio e video do stream remoto.
@@ -257,7 +248,7 @@ export function useVoiceCall(
         });
       }
     },
-    [anexarAudio, atualizarParticipantes, desanexarAudio, leave, nomeDe],
+    [atualizarParticipantes, desanexarAudio, leave, nomeDe],
   );
 
   // Sinais vindos dos peers.

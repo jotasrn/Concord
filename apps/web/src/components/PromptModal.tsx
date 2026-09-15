@@ -6,6 +6,8 @@ export interface PromptField {
   label: string;
   placeholder?: string;
   multiline?: boolean;
+  /** Valor inicial do campo. */
+  defaultValue?: string;
 }
 
 export interface PromptRequest {
@@ -31,7 +33,7 @@ export function PromptModal({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setValues(Object.fromEntries(request.fields.map((f) => [f.name, ''])));
+    setValues(Object.fromEntries(request.fields.map((f) => [f.name, f.defaultValue ?? ''])));
   }, [request]);
 
   useEffect(() => {

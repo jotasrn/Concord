@@ -1,0 +1,29 @@
+{
+  "name": "@concord/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Servidor HTTP/WebSocket do Concord para acesso via browser",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node --esm src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@concord/core": "*",
+    "ws": "^8.18.0",
+    "express": "^4.19.2",
+    "cookie-parser": "^1.4.7",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.12",
+    "@types/express": "^4.17.21",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/uuid": "^10.0.0",
+    "ts-node": "^10.9.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

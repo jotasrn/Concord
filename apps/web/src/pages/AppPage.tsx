@@ -1,47 +1,39 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Hash, LogIn, MicOff, Plus, Radio, Send, Settings, Share2, UserPlus, Volume2 } from 'lucide-react';
-import { Avatar, Button, ErrorBanner, Input } from '../components/ui';
+import { Avatar, Button, ErrorBanner, InfoBanner, Input } from '../components/ui';
 import { MessageText } from '../components/MessageText';
-import { AudioSettingsPanel } from '../features/voice/AudioSettingsPanel';
 import { PromptModal, PromptRequest } from '../components/PromptModal';
 import { CallPanel } from '../features/voice/CallPanel';
 import { CallStage } from '../features/voice/CallStage';
-import { ProfilePanel } from '../features/profile/ProfilePanel';
-import { StatusPicker } from '../features/profile/StatusPicker';
-import { FriendsPanel } from '../features/friends/FriendsPanel';
 import { RequestsPopup } from '../features/friends/RequestsPopup';
 import { MemberMenu } from '../features/members/MemberMenu';
-import { ResourcesPanel } from '../features/settings/ResourcesPanel';
-import { VideoPanel } from '../features/settings/VideoPanel';
+import { SettingsModal } from '../features/settings/SettingsModal';
+import { StatusPicker } from '../features/profile/StatusPicker';
 import { ScreenViewer } from '../features/screenshare/ScreenViewer';
 import { SourcePicker } from '../features/screenshare/SourcePicker';
 import type { CaptureSource } from '../features/screenshare/ScreenShareEngine';
 import type { ScreenQuality } from '../features/screenshare/presets';
 import { useVoiceCall } from '../features/voice/useVoiceCall';
+import { useServerData } from '../hooks/useServerData';
 import { sounds } from '../features/voice/audio/SoundEffects';
 import type {
-  ChannelView,
-  MemberView,
-  MessageView,
   Friend,
   PeerPresence,
   PendingInvite,
   PresenceStatus,
   Profile,
   SettableStatus,
-  ServerView,
+  ChannelView,
 } from '../types/concord-api';
 
+
 export function AppPage({ profile }: { profile: Profile }) {
-  const [servers, setServers] = useState<ServerView[]>([]);
-  const [activeServer, setActiveServer] = useState<string | null>(null);
-  const [channels, setChannels] = useState<ChannelView[]>([]);
-  const [activeChannel, setActiveChannel] = useState<string | null>(null);
-  const [messages, setMessages] = useState<MessageView[]>([]);
-  const [members, setMembers] = useState<MemberView[]>([]);
   const [draft, setDraft] = useState('');
   const [peers, setPeers] = useState(0);
+  const [networkError, setNetworkError] = useState(false);
+  const networkFailsRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [prompt, setPrompt] = useState<PromptRequest | null>(null);
   const [picker, setPicker] = useState<'novo' | 'trocar' | null>(null);
@@ -56,6 +48,23 @@ export function AppPage({ profile }: { profile: Profile }) {
   const [convitesPendentes, setConvitesPendentes] = useState<PendingInvite[]>([]);
   const [membroAberto, setMembroAberto] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const report = (e: unknown) => setError(e instanceof Error ? e.message : 'Erro inesperado');
+
+  const {
+    servers,
+    channels,
+    members,
+    messages,
+    activeServer,
+    activeChannel,
+    setActiveServer,
+    setActiveChannel,
+    loadServers,
+    loadServerContent,
+    loadMessages,
+  } = useServerData(report);
+
 
   const memberNames = new Map(members.map((m) => [m.userKey, m.displayName]));
   // Silenciados pela moderacao: a chamada aplica isso em quem recebe.
@@ -114,76 +123,22 @@ export function AppPage({ profile }: { profile: Profile }) {
   const donoDoServidor = servers.find((s) => s.id === activeServer)?.ownerKey ?? null;
   const souDono = donoDoServidor === profile.publicKey;
 
-  const report = (e: unknown) => setError(e instanceof Error ? e.message : 'Erro inesperado');
-
-  const loadServers = useCallback(async () => {
-    try {
-      const list = await window.concord.servers.list();
-      setServers(list);
-      setActiveServer((current) => current ?? list[0]?.id ?? null);
-    } catch (e) {
-      report(e);
-    }
-  }, []);
-
-  const loadServerContent = useCallback(async (serverId: string) => {
-    try {
-      const [chans, mems] = await Promise.all([
-        window.concord.channels.list(serverId),
-        window.concord.members.list(serverId),
-      ]);
-      setChannels(chans);
-      setMembers(mems);
-      setActiveChannel((current) =>
-        current && chans.some((c) => c.id === current)
-          ? current
-          : (chans.find((c) => c.type === 'TEXT')?.id ?? null),
-      );
-    } catch (e) {
-      report(e);
-    }
-  }, []);
-
-  const loadMessages = useCallback(async (channelId: string) => {
-    try {
-      setMessages(await window.concord.messages.list(channelId, 100));
-    } catch (e) {
-      report(e);
-    }
-  }, []);
-
   useEffect(() => {
-    void loadServers();
-  }, [loadServers]);
-
-  useEffect(() => {
-    if (activeServer) void loadServerContent(activeServer);
-  }, [activeServer, loadServerContent]);
-
-  useEffect(() => {
-    if (activeChannel) void loadMessages(activeChannel);
-  }, [activeChannel, loadMessages]);
-
-  // Operacoes chegaram de um peer: recarrega o que estiver na tela.
-  useEffect(() => {
-    return window.concord.onSyncUpdate((serverId) => {
-      void loadServers();
-      if (serverId === activeServer) {
-        void loadServerContent(serverId);
-        if (activeChannel) {
-          void loadMessages(activeChannel);
-          sounds.play('message');
-        }
-      }
-    });
-  }, [activeServer, activeChannel, loadServers, loadServerContent, loadMessages]);
-
-  useEffect(() => {
+    let failCount = 0;
     const tick = () =>
       void window.concord.network
         .status()
-        .then((s) => setPeers(s.peers))
-        .catch(() => undefined);
+        .then((s) => {
+          setPeers(s.peers);
+          failCount = 0;
+          setNetworkError(false);
+          networkFailsRef.current = 0;
+        })
+        .catch(() => {
+          failCount += 1;
+          networkFailsRef.current = failCount;
+          if (failCount >= 3) setNetworkError(true);
+        });
     tick();
     const id = setInterval(tick, 3000);
     return () => clearInterval(id);
@@ -279,8 +234,21 @@ export function AppPage({ profile }: { profile: Profile }) {
     profile.publicKey,
   ]);
 
+  /**
+   * Rola para o final da lista de mensagens de forma inteligente:
+   * - Sempre rola quando o usuario mesmo enviou (scroll manual via send())
+   * - So rola automaticamente se o usuario ja estava perto do fim (<= 120px)
+   */
+  const isNearBottom = () => {
+    const el = scrollRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= 120;
+  };
+
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (isNearBottom()) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    }
   }, [messages]);
 
   function createServer() {
@@ -337,11 +305,13 @@ export function AppPage({ profile }: { profile: Profile }) {
           );
           await loadServerContent(activeServer);
           sounds.play('success');
-          setError(
-            status === 'entregue'
-              ? null
-              : 'Adicionado. O convite ficou na fila: a pessoa ainda nao foi encontrada na rede e vai receber quando abrir o app.',
-          );
+          if (status === 'na-fila') {
+            setInfo(
+              'Adicionado. O convite ficou na fila: a pessoa ainda nao foi encontrada na rede e vai receber quando abrir o app.',
+            );
+          } else {
+            setInfo(null);
+          }
         } catch (e) {
           report(e);
         }
@@ -360,7 +330,7 @@ export function AppPage({ profile }: { profile: Profile }) {
           title: 'Convite copiado',
           description:
             'Ja esta na area de transferencia. Quem receber consegue LER o historico; para escrever, adicione a chave publica dele nos membros.',
-          fields: [{ name: 'codigo', label: 'Codigo', multiline: true }],
+          fields: [{ name: 'codigo', label: 'Codigo', multiline: true, defaultValue: codigo }],
           confirmLabel: 'Fechar',
           onSubmit: () => undefined,
         });
@@ -396,6 +366,8 @@ export function AppPage({ profile }: { profile: Profile }) {
       await window.concord.messages.send(activeServer, activeChannel, content);
       sounds.play('messageSent');
       await loadMessages(activeChannel);
+      // Mensagem propria: sempre rola para o fim independente da posicao.
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     } catch (e) {
       report(e);
       setDraft(content);
@@ -416,6 +388,7 @@ export function AppPage({ profile }: { profile: Profile }) {
             key={s.id}
             onClick={() => setActiveServer(s.id)}
             title={s.name}
+            aria-label={`Servidor: ${s.name}`}
             className={`flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-bold transition-all ${
               s.id === activeServer
                 ? 'rounded-xl bg-violet-600 text-white shadow-glow'
@@ -428,6 +401,7 @@ export function AppPage({ profile }: { profile: Profile }) {
         <button
           onClick={entrarPorConvite}
           title="Entrar com um convite"
+          aria-label="Entrar com um convite"
           className="flex h-11 w-11 items-center justify-center rounded-2xl border border-dashed border-void-500 text-ink-300 transition hover:border-violet-500 hover:text-violet-400"
         >
           <LogIn className="h-5 w-5" />
@@ -435,6 +409,7 @@ export function AppPage({ profile }: { profile: Profile }) {
         <button
           onClick={createServer}
           title="Criar servidor"
+          aria-label="Criar servidor"
           className="flex h-11 w-11 items-center justify-center rounded-2xl border border-dashed border-void-500 text-ink-300 transition hover:border-violet-500 hover:text-violet-400"
         >
           <Plus className="h-5 w-5" />
@@ -451,6 +426,7 @@ export function AppPage({ profile }: { profile: Profile }) {
             <button
               onClick={criarConvite}
               title="Gerar convite"
+              aria-label="Gerar convite"
               className="rounded p-1 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
             >
               <Share2 className="h-4 w-4" />
@@ -519,20 +495,32 @@ export function AppPage({ profile }: { profile: Profile }) {
             <div className="flex items-center gap-2">
               <StatusPicker
                 status={status}
-                onChange={(novo) => {
+                onChange={(novo: SettableStatus) => {
                   setStatus(novo);
                   void window.concord.presence.set(novo).catch(report);
                 }}
               />
-              <span className="flex items-center gap-1 text-[10px] text-ink-400" title="Peers conectados">
-                <Radio className={peers > 0 ? 'h-2.5 w-2.5 text-status-online' : 'h-2.5 w-2.5 text-status-offline'} />
-                {peers}
+              <span
+                className="flex items-center gap-1 text-[10px] text-ink-400"
+                title={networkError ? 'Sem conexao com a rede' : 'Peers conectados'}
+              >
+                <Radio
+                  className={
+                    networkError
+                      ? 'h-2.5 w-2.5 text-status-dnd'
+                      : peers > 0
+                        ? 'h-2.5 w-2.5 text-status-online'
+                        : 'h-2.5 w-2.5 text-status-offline'
+                  }
+                />
+                {networkError ? 'offline' : peers}
               </span>
             </div>
           </div>
           <button
             onClick={() => setShowSettings(true)}
             title="Configuracoes"
+            aria-label="Abrir configuracoes"
             className="rounded p-1.5 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
           >
             <Settings className="h-4 w-4" />
@@ -584,6 +572,7 @@ export function AppPage({ profile }: { profile: Profile }) {
 
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
           {error && <ErrorBanner message={error} />}
+          {info && <InfoBanner message={info} />}
           {currentChannel && messages.length === 0 && (
             <p className="text-sm text-ink-400">
               Nenhuma mensagem em #{currentChannel.name} ainda.
@@ -866,68 +855,4 @@ function ChannelGroup({
   );
 }
 
-const ROTULOS_ABA = {
-  perfil: 'Meu perfil',
-  amigos: 'Amigos',
-  audio: 'Voz',
-  video: 'Video',
-  recursos: 'Recursos',
-} as const;
 
-function SettingsModal({
-  profile,
-  status,
-  onClose,
-  onProfileSaved,
-  servers,
-  presencaDe,
-  onFriendsChanged,
-}: {
-  profile: Profile;
-  status: SettableStatus;
-  onClose: () => void;
-  onProfileSaved: (displayName: string) => void;
-  servers: ServerView[];
-  presencaDe: (userKey: string) => PresenceStatus;
-  onFriendsChanged: () => void;
-}) {
-  const [tab, setTab] = useState<'perfil' | 'amigos' | 'audio' | 'video' | 'recursos'>('perfil');
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
-      <div className="panel flex h-[640px] w-full max-w-3xl overflow-hidden">
-        <nav className="w-44 shrink-0 space-y-1 border-r border-void-700 bg-void-850 p-3">
-          {(['perfil', 'amigos', 'audio', 'video', 'recursos'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`w-full rounded px-3 py-2 text-left text-sm transition ${
-                tab === t ? 'bg-violet-600/20 text-violet-200' : 'text-ink-300 hover:bg-void-700'
-              }`}
-            >
-              {ROTULOS_ABA[t]}
-            </button>
-          ))}
-          <button
-            onClick={onClose}
-            className="mt-4 w-full rounded px-3 py-2 text-left text-sm text-ink-400 hover:text-ink-100"
-          >
-            Fechar
-          </button>
-        </nav>
-
-        <div className="flex-1 overflow-y-auto p-6">
-          {tab === 'perfil' && (
-            <ProfilePanel profile={profile} status={status} onSaved={onProfileSaved} />
-          )}
-          {tab === 'amigos' && (
-            <FriendsPanel servers={servers} presencaDe={presencaDe} onChanged={onFriendsChanged} />
-          )}
-          {tab === 'audio' && <AudioSettingsPanel />}
-          {tab === 'video' && <VideoPanel />}
-          {tab === 'recursos' && <ResourcesPanel />}
-        </div>
-      </div>
-    </div>
-  );
-}

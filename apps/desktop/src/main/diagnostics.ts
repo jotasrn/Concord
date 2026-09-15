@@ -11,10 +11,19 @@ import { app, dialog } from 'electron';
  */
 export const logPath = join(app.getPath('userData'), 'concord.log');
 
+/**
+ * Guarda se o diretorio de log ja foi criado para evitar uma syscall a cada
+ * linha gravada.
+ */
+let logDirReady = false;
+
 export function log(level: 'info' | 'error', message: string): void {
   const line = `${new Date().toISOString()} [${level}] ${message}\n`;
   try {
-    mkdirSync(app.getPath('userData'), { recursive: true });
+    if (!logDirReady) {
+      mkdirSync(app.getPath('userData'), { recursive: true });
+      logDirReady = true;
+    }
     appendFileSync(logPath, line);
   } catch {
     // Sem log em disco, resta o console do modo dev.

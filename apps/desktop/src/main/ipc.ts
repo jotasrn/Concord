@@ -18,6 +18,57 @@ function wrap<T>(fn: () => T | Promise<T>): Promise<Reply<T>> {
     }));
 }
 
+// ---------- validacao de entrada ----------
+
+/**
+ * IDs de servidor e canal seguem o padrao UUID v4 ou hex-64.
+ * Rejeitar qualquer coisa fora disso impede injecao de caminhos ou SQL.
+ */
+const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RE_HEX64 = /^[0-9a-f]{64}$/;
+
+function assertId(value: unknown, label: string): string {
+  if (typeof value !== 'string') throw new Error(`${label} invalido`);
+  const v = value.trim();
+  if (!RE_UUID.test(v) && !RE_HEX64.test(v)) throw new Error(`${label} invalido`);
+  return v;
+}
+
+/** Remove caracteres de controle que nao devem aparecer em mensagens de chat. */
+function sanitizeContent(raw: string): string {
+  // Mantem tabulacao (\t=0x09), nova linha (\n=0x0A) e retorno (\r=0x0D).
+  // Descarta os demais controles (0x00-0x08, 0x0B-0x0C, 0x0E-0x1F, 0x7F).
+  // eslint-disable-next-line no-control-regex
+  return raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+}
+
+// ---------- rate-limit de mensagens ----------
+
+interface RateBucket {
+  count: number;
+  /** Timestamp em ms em que a janela corrente expira. */
+  resetAt: number;
+}
+
+/** Por canal: max 5 mensagens em 3 segundos. */
+const MESSAGE_LIMIT = 5;
+const MESSAGE_WINDOW_MS = 3_000;
+const rateBuckets = new Map<string, RateBucket>();
+
+function checkRateLimit(channelId: string): void {
+  const now = Date.now();
+  const bucket = rateBuckets.get(channelId);
+  if (!bucket || now >= bucket.resetAt) {
+    rateBuckets.set(channelId, { count: 1, resetAt: now + MESSAGE_WINDOW_MS });
+    return;
+  }
+  if (bucket.count >= MESSAGE_LIMIT) {
+    const wait = Math.ceil((bucket.resetAt - now) / 1000);
+    throw new Error(`Muitas mensagens. Aguarde ${wait}s antes de enviar novamente.`);
+  }
+  bucket.count += 1;
+}
+
 export function registerIpc(
   session: Session,
   getWindow: () => BrowserWindow | null,
@@ -135,11 +186,14 @@ export function registerIpc(
     'messages:send',
     (_e, serverId: string, channelId: string, content: string) =>
       wrap(() => {
-        const trimmed = content.trim();
+        const sid = assertId(serverId, 'serverId');
+        const cid = assertId(channelId, 'channelId');
+        checkRateLimit(cid);
+        const trimmed = sanitizeContent(content).trim();
         if (!trimmed) throw new Error('Mensagem vazia');
         if (trimmed.length > 4000) throw new Error('Mensagem muito longa');
-        return session.publish(serverId, () =>
-          session.requireStore().sendMessage(serverId, channelId, trimmed),
+        return session.publish(sid, () =>
+          session.requireStore().sendMessage(sid, cid, trimmed),
         );
       }),
   );

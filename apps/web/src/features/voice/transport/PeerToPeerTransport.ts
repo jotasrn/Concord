@@ -3,6 +3,7 @@ import {
   LATENCY_PROFILES,
   LatencyBreakdown,
   LatencyProfile,
+  OPUS_BITRATE_BPS,
   applyOpusLowLatency,
   readLatency,
   tuneAllReceivers,
@@ -24,27 +25,73 @@ export interface SignalSender {
 }
 
 export interface PeerEvents {
-  onStream: (peerKey: string, stream: MediaStream) => void;
+  /** Faixas de audio do peer (microfone e, quando houver, audio do sistema). */
+  onAudio: (peerKey: string, stream: MediaStream) => void;
+  /**
+   * Tela do peer. `null` quando ele parou de transmitir.
+   *
+   * Cada faixa recebida vira um MediaStream novo: a identidade do objeto muda,
+   * e e isso que faz o elemento <video> do React se reconectar.
+   */
+  onScreen: (peerKey: string, stream: MediaStream | null) => void;
+  /** O peer congelou a propria transmissao. A imagem para, a conexao nao. */
+  onScreenPaused: (peerKey: string, paused: boolean) => void;
   onPeerLeft: (peerKey: string) => void;
   onConnectionChange: (peerKey: string, state: RTCPeerConnectionState) => void;
 }
 
 interface PeerEntry {
   pc: RTCPeerConnection;
-  stream: MediaStream;
+  /** Somente audio. Nunca e recriado, para nao interromper a reproducao. */
+  audioStream: MediaStream;
+  /** Tela recebida, se houver. */
+  screenStream: MediaStream | null;
   /**
    * Lado "polite" cede em colisao de offers. Definido comparando as chaves
    * publicas, o que da a mesma resposta nos dois lados sem negociacao extra.
    */
   polite: boolean;
   makingOffer: boolean;
+  /**
+   * Offer ignorada por ser lado impolite: os candidates que chegam depois dela
+   * pertencem a uma descricao que nunca foi aplicada e precisam ser
+   * descartados, senao viram erro a cada um.
+   */
+  ignoringOffer: boolean;
   pendingCandidates: RTCIceCandidateInit[];
   /** Conta o tempo em disconnected antes de forcar a renegociacao. */
   recoveryTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * Transceivers que NOS usamos para enviar. Guardados para reaproveitar em
+   * vez de criar m-lines novas a cada inicio de transmissao.
+   */
+  micTransceiver: RTCRtpTransceiver | null;
+  videoTransceiver: RTCRtpTransceiver | null;
+  systemAudioTransceiver: RTCRtpTransceiver | null;
+  /** O peer disse que esta transmitindo. Base para detectar tela que nao chegou. */
+  remoteSharing: boolean;
+  /** Timer da checagem "ele disse que transmite mas nada chegou". */
+  resendTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * Fila de sinalizacao. Um unico encadeamento de promessas por peer.
+   *
+   * Sem isto, dois sinais que chegam juntos entram em handleSignal ao mesmo
+   * tempo e se atropelam nos `await`: setRemoteDescription roda duas vezes
+   * seguidas, o estado da negociacao quebra e a conexao fica parada ate a
+   * chamada ser refeita. Era exatamente o que acontecia quando duas pessoas
+   * comecavam a transmitir tela: muitos sinais de uma vez.
+   */
+  queue: Promise<void>;
 }
 
 /** Quanto esperar a conexao voltar sozinha antes de reiniciar o ICE. */
 const RECOVERY_DELAY_MS = 4000;
+
+/**
+ * Prazo entre "ele avisou que esta transmitindo" e concluir que a tela nao vai
+ * chegar. Precisa caber uma negociacao completa com folga.
+ */
+const ESPERA_TELA_MS = 5000;
 
 /**
  * Malha P2P: uma RTCPeerConnection por participante.
@@ -86,55 +133,89 @@ export class PeerToPeerTransport implements VoiceTransport {
     if (existing) return existing;
 
     const pc = new RTCPeerConnection({ iceServers: this.iceServers });
-    const stream = new MediaStream();
 
     const entry: PeerEntry = {
       pc,
-      stream,
+      audioStream: new MediaStream(),
+      screenStream: null,
       // Ordem lexicografica das chaves decide quem cede - deterministico e
       // oposto nos dois lados.
       polite: this.selfKey < peerKey,
       makingOffer: false,
+      ignoringOffer: false,
       pendingCandidates: [],
       recoveryTimer: null,
+      micTransceiver: null,
+      videoTransceiver: null,
+      systemAudioTransceiver: null,
+      remoteSharing: false,
+      resendTimer: null,
+      queue: Promise.resolve(),
     };
 
-    if (this.localTrack) pc.addTrack(this.localTrack);
-    if (this.localVideoTrack) {
-      const transceiver = pc.addTransceiver(this.localVideoTrack, { direction: 'sendonly' });
-      this.preferScreenCodecs(transceiver);
+    if (this.localTrack) {
+      entry.micTransceiver = pc.addTransceiver(this.localTrack, { direction: 'sendrecv' });
     }
-    if (this.systemAudioTrack) pc.addTransceiver(this.systemAudioTrack, { direction: 'sendonly' });
+    if (this.localVideoTrack) {
+      entry.videoTransceiver = pc.addTransceiver(this.localVideoTrack, { direction: 'sendonly' });
+      this.preferScreenCodecs(entry.videoTransceiver);
+    }
+    if (this.systemAudioTrack) {
+      entry.systemAudioTransceiver = pc.addTransceiver(this.systemAudioTrack, {
+        direction: 'sendonly',
+      });
+    }
 
     pc.ontrack = (event) => {
-      for (const track of event.streams[0]?.getTracks() ?? [event.track]) {
-        if (stream.getTracks().includes(track)) continue;
+      const track = event.track;
+
+      if (track.kind === 'video') {
+        /*
+         * Tela do peer, em stream proprio.
+         *
+         * Antes audio e video iam para o MESMO MediaStream. Isso causava dois
+         * problemas: cada mudanca no video reatribuia o srcObject do elemento
+         * de audio (estalo audivel no meio da conversa), e o objeto de stream
+         * nunca trocava de identidade, entao o React nao tinha como perceber
+         * que a tela mudou.
+         */
+        const screen = new MediaStream([track]);
+        entry.screenStream = screen;
+        // A faixa chegando ja e prova de transmissao: o aviso 'state' pode vir
+        // depois, ou nem vir se tiver se perdido.
+        entry.remoteSharing = true;
+
+        track.addEventListener('ended', () => {
+          if (entry.screenStream !== screen) return;
+          entry.screenStream = null;
+          entry.remoteSharing = false;
+          this.events.onScreen(peerKey, null);
+        });
 
         /*
-         * So 'ended' encerra a faixa de verdade.
-         *
-         * 'mute' NAO significa fim: em WebRTC ele dispara sempre que a midia
-         * para de chegar por um instante - um engasgo de rede basta - e volta
-         * com 'unmute'. Remover a faixa nesse evento matava a transmissao de
-         * forma permanente ao primeiro soluco, e a imagem so voltava refazendo
-         * a chamada.
-         *
-         * Os dois eventos apenas avisam a interface, que decide o que mostrar.
+         * 'mute' NAO e tratado aqui de proposito. Ele dispara em qualquer
+         * interrupcao momentanea - um engasgo de rede basta - e usa-lo para
+         * esconder a tela fazia a transmissao desaparecer ao primeiro soluco.
+         * Quem manda em "esta ou nao transmitindo" e o sinal 'state', enviado
+         * explicitamente por quem transmite.
          */
+        this.events.onScreen(peerKey, screen);
+      } else {
+        if (!entry.audioStream.getTracks().includes(track)) {
+          entry.audioStream.addTrack(track);
+        }
         track.addEventListener('ended', () => {
-          if (stream.getTracks().includes(track)) stream.removeTrack(track);
-          this.events.onStream(peerKey, stream);
+          if (entry.audioStream.getTracks().includes(track)) {
+            entry.audioStream.removeTrack(track);
+          }
+          this.events.onAudio(peerKey, entry.audioStream);
         });
-        track.addEventListener('mute', () => this.events.onStream(peerKey, stream));
-        track.addEventListener('unmute', () => this.events.onStream(peerKey, stream));
-
-        stream.addTrack(track);
+        this.events.onAudio(peerKey, entry.audioStream);
       }
 
       // Receptores so existem depois da midia chegar; e aqui que o alvo do
       // jitter buffer pode ser aplicado.
       tuneAllReceivers(pc, this.latency.jitterTarget);
-      this.events.onStream(peerKey, stream);
     };
 
     pc.onicecandidate = (event) => {
@@ -147,25 +228,9 @@ export class PeerToPeerTransport implements VoiceTransport {
       });
     };
 
-    pc.onnegotiationneeded = async () => {
-      if (!this.channelId) return;
-      try {
-        entry.makingOffer = true;
-        const offer = await pc.createOffer();
-        offer.sdp = this.tuneSdp(offer.sdp);
-        await pc.setLocalDescription(offer);
-        this.send({
-          kind: 'offer',
-          to: peerKey,
-          channelId: this.channelId,
-          data: pc.localDescription?.toJSON(),
-        });
-      } catch {
-        // Renegociacao falha nao deve derrubar a chamada inteira.
-      } finally {
-        entry.makingOffer = false;
-      }
-    };
+    // A renegociacao entra na MESMA fila dos sinais recebidos: criar uma offer
+    // enquanto uma descricao remota esta sendo aplicada e a receita da colisao.
+    pc.onnegotiationneeded = () => this.enqueue(entry, () => this.negotiate(peerKey, entry));
 
     pc.onconnectionstatechange = () => {
       this.events.onConnectionChange(peerKey, pc.connectionState);
@@ -201,10 +266,77 @@ export class PeerToPeerTransport implements VoiceTransport {
     this.peers.set(peerKey, entry);
     // Encoding precisa ser aplicado depois do sender existir.
     void this.applyVideoEncoding(entry);
+    void this.applyAudioEncoding(entry);
     return entry;
   }
 
-  /** Trata um sinal recebido pela camada P2P. */
+  /**
+   * Encadeia um passo de sinalizacao na fila do peer.
+   *
+   * Erros sao contidos aqui: um sinal malformado de um peer nao pode derrubar
+   * a negociacao com os outros nem deixar uma promessa rejeitada solta.
+   */
+  private enqueue(entry: PeerEntry, step: () => Promise<void>): void {
+    entry.queue = entry.queue.then(step).catch(() => undefined);
+  }
+
+  /**
+   * Pede a tela de novo quando o peer diz que transmite e nada chegou.
+   *
+   * A espera existe porque o aviso 'state' costuma chegar antes da offer que
+   * carrega a faixa - pedir na hora geraria uma renegociacao inutil em toda
+   * transmissao iniciada.
+   */
+  private agendarChecagemDeTela(peerKey: string, entry: PeerEntry): void {
+    if (entry.resendTimer) clearTimeout(entry.resendTimer);
+    entry.resendTimer = setTimeout(() => {
+      entry.resendTimer = null;
+      if (!entry.remoteSharing || entry.screenStream || !this.channelId) return;
+      this.send({
+        kind: 'state',
+        to: peerKey,
+        channelId: this.channelId,
+        data: { resend: true },
+      });
+    }, ESPERA_TELA_MS);
+  }
+
+  /**
+   * Cria e envia uma offer.
+   *
+   * `forcar` acrescenta reinicio de ICE: e usado quando o outro lado avisa que
+   * nao esta recebendo a tela. Nesse caso o SDP normalmente ja esta correto e o
+   * que faltou foi o caminho de midia, entao repetir a mesma offer nao
+   * resolveria - o que resolve e refazer os candidatos.
+   */
+  private async negotiate(peerKey: string, entry: PeerEntry, forcar = false): Promise<void> {
+    if (!this.channelId) return;
+    // A fila serializa, mas a offer pode ter ficado obsoleta na espera.
+    if (entry.pc.signalingState !== 'stable') return;
+    try {
+      entry.makingOffer = true;
+      const offer = await entry.pc.createOffer(forcar ? { iceRestart: true } : undefined);
+      offer.sdp = this.tuneSdp(offer.sdp);
+      await entry.pc.setLocalDescription(offer);
+      this.send({
+        kind: 'offer',
+        to: peerKey,
+        channelId: this.channelId,
+        data: entry.pc.localDescription?.toJSON(),
+      });
+    } catch {
+      // Renegociacao falha nao deve derrubar a chamada inteira.
+    } finally {
+      entry.makingOffer = false;
+    }
+  }
+
+  /**
+   * Trata um sinal recebido pela camada P2P.
+   *
+   * Aqui so entra o enfileiramento: o trabalho fica em applySignal, que roda um
+   * sinal por vez para cada peer.
+   */
   async handleSignal(signal: {
     kind: string;
     from: string;
@@ -213,22 +345,103 @@ export class PeerToPeerTransport implements VoiceTransport {
   }): Promise<void> {
     if (signal.channelId !== this.channelId || signal.from === this.selfKey) return;
 
+    // 'leave' nao espera a fila: se o peer saiu, o que esta enfileirado para
+    // ele perdeu sentido.
+    if (signal.kind === 'leave') {
+      this.removePeer(signal.from);
+      return;
+    }
+
+    const entry = this.createPeer(signal.from);
+    this.enqueue(entry, () => this.applySignal(entry, signal));
+  }
+
+  private async applySignal(
+    entry: PeerEntry,
+    signal: { kind: string; from: string; channelId: string; data?: unknown },
+  ): Promise<void> {
     switch (signal.kind) {
       case 'join': {
-        // Alguem entrou: criamos a conexao, o que dispara negotiationneeded.
-        this.createPeer(signal.from);
+        /*
+         * Alguem entrou. A conexao ja foi criada por handleSignal, o que
+         * dispara negotiationneeded sozinho.
+         *
+         * Se ja estamos transmitindo, contamos: quem acabou de chegar nao
+         * presenciou o 'state' anterior e ficaria sem saber que ha uma tela.
+         */
+        if (this.localVideoTrack && this.channelId) {
+          this.send({
+            kind: 'state',
+            to: signal.from,
+            channelId: this.channelId,
+            data: { sharing: true },
+          });
+        }
+        break;
+      }
+
+      case 'state': {
+        const data = signal.data as
+          | { sharing?: boolean; paused?: boolean; resend?: boolean }
+          | null;
+        if (!data) return;
+
+        /*
+         * O outro lado avisou que nao recebeu nossa tela.
+         *
+         * replaceTrack numa m-line que ja existe nao dispara
+         * negotiationneeded, entao se aquela negociacao se perdeu no caminho
+         * nada a refaria sozinho - era exatamente o caso de "ele esta
+         * transmitindo e eu nao vejo nada, tenho que sair e entrar".
+         */
+        if (data.resend) {
+          if (this.localVideoTrack) await this.negotiate(signal.from, entry, true);
+          return;
+        }
+
+        if (typeof data.paused === 'boolean') {
+          this.events.onScreenPaused(signal.from, data.paused);
+        }
+
+        if (typeof data.sharing !== 'boolean') return;
+
+        if (data.sharing) {
+          entry.remoteSharing = true;
+          // A tela em si chega por ontrack; se ja chegou, reafirma.
+          if (entry.screenStream) this.events.onScreen(signal.from, entry.screenStream);
+          this.agendarChecagemDeTela(signal.from, entry);
+        } else {
+          entry.remoteSharing = false;
+          if (entry.resendTimer) {
+            clearTimeout(entry.resendTimer);
+            entry.resendTimer = null;
+          }
+          /*
+           * screenStream NAO e descartado aqui.
+           *
+           * Parar de transmitir e replaceTrack(null): a faixa do outro lado
+           * apenas emudece, ela nao termina. Se ela fosse esquecida agora, uma
+           * segunda transmissao nao geraria ontrack nenhum - a mesma faixa
+           * voltaria a receber quadros e nao haveria stream para mostrar.
+           * Quem manda na visibilidade e remoteSharing; a faixa so e esquecida
+           * quando termina de verdade ('ended').
+           */
+          this.events.onScreen(signal.from, null);
+        }
         break;
       }
 
       case 'offer': {
-        const entry = this.createPeer(signal.from);
         const description = signal.data as RTCSessionDescriptionInit;
+        if (!description?.sdp) return;
 
         // Perfect negotiation: em colisao, o lado impolite ignora a offer.
-        const colisao =
-          entry.makingOffer || entry.pc.signalingState !== 'stable';
-        if (colisao && !entry.polite) return;
+        const colisao = entry.makingOffer || entry.pc.signalingState !== 'stable';
+        entry.ignoringOffer = colisao && !entry.polite;
+        if (entry.ignoringOffer) return;
 
+        // Em colisao do lado polite, setRemoteDescription faz o rollback
+        // implicito da nossa propria offer.
         await entry.pc.setRemoteDescription(description);
         await this.flushCandidates(entry);
         const answer = await entry.pc.createAnswer();
@@ -240,21 +453,24 @@ export class PeerToPeerTransport implements VoiceTransport {
           channelId: signal.channelId,
           data: entry.pc.localDescription?.toJSON(),
         });
+        // Faixas novas podem ter aparecido nesta negociacao.
+        await this.applyVideoEncoding(entry);
         break;
       }
 
       case 'answer': {
-        const entry = this.peers.get(signal.from);
-        if (!entry || entry.pc.signalingState !== 'have-local-offer') return;
+        if (entry.pc.signalingState !== 'have-local-offer') return;
         await entry.pc.setRemoteDescription(signal.data as RTCSessionDescriptionInit);
         await this.flushCandidates(entry);
+        await this.applyVideoEncoding(entry);
         break;
       }
 
       case 'ice': {
-        const entry = this.peers.get(signal.from);
         const candidate = signal.data as RTCIceCandidateInit;
-        if (!entry) return;
+        // Candidates de uma offer que decidimos ignorar nao tem descricao onde
+        // encaixar.
+        if (entry.ignoringOffer) return;
         // Candidates podem chegar antes da descricao remota; guardamos ate la.
         if (!entry.pc.remoteDescription) {
           entry.pendingCandidates.push(candidate);
@@ -265,11 +481,6 @@ export class PeerToPeerTransport implements VoiceTransport {
         } catch {
           // Candidate invalido de um peer nao invalida a conexao.
         }
-        break;
-      }
-
-      case 'leave': {
-        this.removePeer(signal.from);
         break;
       }
     }
@@ -290,6 +501,7 @@ export class PeerToPeerTransport implements VoiceTransport {
     const entry = this.peers.get(peerKey);
     if (!entry) return;
     if (entry.recoveryTimer) clearTimeout(entry.recoveryTimer);
+    if (entry.resendTimer) clearTimeout(entry.resendTimer);
     entry.pc.close();
     this.peers.delete(peerKey);
     this.stats.reset(peerKey);
@@ -297,7 +509,7 @@ export class PeerToPeerTransport implements VoiceTransport {
   }
 
   getRemoteStreams(): Map<string, MediaStream> {
-    return new Map([...this.peers].map(([key, entry]) => [key, entry.stream]));
+    return new Map([...this.peers].map(([key, entry]) => [key, entry.audioStream]));
   }
 
   async getStats(): Promise<Map<string, VoiceStats>> {
@@ -312,7 +524,7 @@ export class PeerToPeerTransport implements VoiceTransport {
   async replaceTrack(track: MediaStreamTrack): Promise<void> {
     this.localTrack = track;
     for (const entry of this.peers.values()) {
-      const sender = entry.pc.getSenders().find((s) => s.track?.kind === 'audio');
+      const sender = entry.micTransceiver?.sender;
       if (sender) await sender.replaceTrack(track);
     }
   }
@@ -320,31 +532,37 @@ export class PeerToPeerTransport implements VoiceTransport {
   /**
    * Publica a tela para todos os peers.
    *
-   * Reusa o transceiver de video existente sempre que possivel: adicionar uma
-   * track nova dispara renegociacao completa, enquanto replaceTrack troca a
-   * midia sem interromper quem ja esta assistindo.
+   * Reusa o transceiver de video quando ele existe: adicionar uma m-line nova
+   * a cada inicio de transmissao acumula secoes mortas no SDP e obriga uma
+   * renegociacao completa, enquanto replaceTrack troca a midia na hora.
    */
   async addVideoTrack(track: MediaStreamTrack, options?: VideoEncodingOptions): Promise<void> {
     this.localVideoTrack = track;
     this.videoOptions = options ?? this.videoOptions;
 
     for (const entry of this.peers.values()) {
-      const sender = entry.pc.getSenders().find((s) => s.track?.kind === 'video');
-      if (sender) {
-        await sender.replaceTrack(track);
+      if (entry.videoTransceiver) {
+        await entry.videoTransceiver.sender.replaceTrack(track);
+        // Voltar de 'inactive' (deixado por removeVideoTrack) exige dizer de
+        // novo que esta m-line envia.
+        if (entry.videoTransceiver.direction !== 'sendonly') {
+          entry.videoTransceiver.direction = 'sendonly';
+        }
       } else {
-        const transceiver = entry.pc.addTransceiver(track, { direction: 'sendonly' });
-        this.preferScreenCodecs(transceiver);
+        entry.videoTransceiver = entry.pc.addTransceiver(track, { direction: 'sendonly' });
+        this.preferScreenCodecs(entry.videoTransceiver);
       }
       await this.applyVideoEncoding(entry);
     }
+
+    this.announceSharing(true);
   }
 
   /** Troca a fonte compartilhada sem renegociar nem piscar a imagem. */
   async replaceVideoTrack(track: MediaStreamTrack): Promise<void> {
     this.localVideoTrack = track;
     for (const entry of this.peers.values()) {
-      const sender = entry.pc.getSenders().find((s) => s.track?.kind === 'video');
+      const sender = entry.videoTransceiver?.sender;
       if (sender) await sender.replaceTrack(track);
     }
   }
@@ -356,8 +574,8 @@ export class PeerToPeerTransport implements VoiceTransport {
   }
 
   private async applyVideoEncoding(entry: PeerEntry): Promise<void> {
-    const sender = entry.pc.getSenders().find((s) => s.track?.kind === 'video');
-    if (!sender || !this.videoOptions) return;
+    const sender = entry.videoTransceiver?.sender;
+    if (!sender || !sender.track || !this.videoOptions) return;
 
     const parameters = sender.getParameters();
     if (!parameters.encodings || parameters.encodings.length === 0) {
@@ -373,6 +591,33 @@ export class PeerToPeerTransport implements VoiceTransport {
       await sender.setParameters(parameters);
     } catch {
       // Navegador pode recusar combinacoes; a captura ja limita por cima.
+    }
+  }
+
+  /**
+   * Reserva banda e prioridade de rede para a voz.
+   *
+   * Sem teto explicito o Chromium fica perto de 32 kbps em mono, e quando uma
+   * transmissao de tela divide o mesmo caminho o audio e o primeiro a apertar:
+   * a voz fica metalica justamente durante o compartilhamento. O bitrate
+   * declarado aqui, junto com a prioridade alta, mantem a voz na frente.
+   */
+  private async applyAudioEncoding(entry: PeerEntry): Promise<void> {
+    const sender = entry.micTransceiver?.sender;
+    if (!sender) return;
+
+    const parameters = sender.getParameters();
+    if (!parameters.encodings || parameters.encodings.length === 0) {
+      parameters.encodings = [{}];
+    }
+    parameters.encodings[0].maxBitrate = OPUS_BITRATE_BPS;
+    parameters.encodings[0].networkPriority = 'high';
+    parameters.encodings[0].priority = 'high';
+
+    try {
+      await sender.setParameters(parameters);
+    } catch {
+      // Nem todo navegador aceita priority; o bitrate do SDP ja garante o piso.
     }
   }
 
@@ -408,29 +653,70 @@ export class PeerToPeerTransport implements VoiceTransport {
     }
   }
 
-  /** Remove a track de video e renegocia com todos os peers. */
+  /**
+   * Para de transmitir a tela.
+   *
+   * Solta a faixa mas mantem o transceiver para a proxima vez. Como
+   * replaceTrack(null) nao encerra a faixa do outro lado - ela apenas fica
+   * muda, com o ultimo quadro congelado na tela - o aviso de que a transmissao
+   * acabou vai explicito no sinal 'state'.
+   */
   async removeVideoTrack(): Promise<void> {
     this.localVideoTrack = null;
+    this.announceSharing(false);
     for (const entry of this.peers.values()) {
-      const sender = entry.pc.getSenders().find((s) => s.track?.kind === 'video');
-      if (sender) entry.pc.removeTrack(sender);
+      const transceiver = entry.videoTransceiver;
+      if (!transceiver) continue;
+      try {
+        await transceiver.sender.replaceTrack(null);
+      } catch {
+        // Conexao ja fechada: nada a desfazer.
+      }
     }
+  }
+
+  /** Avisa os peers que comecamos ou paramos de transmitir. */
+  private announceSharing(sharing: boolean): void {
+    if (!this.channelId) return;
+    this.send({ kind: 'state', channelId: this.channelId, data: { sharing } });
+  }
+
+  /**
+   * Avisa que congelamos a imagem.
+   *
+   * Sem este aviso, quem assiste ve a tela parada e nao tem como distinguir
+   * pausa de travamento - e a reacao natural e sair e voltar da chamada.
+   */
+  announcePaused(paused: boolean): void {
+    if (!this.channelId) return;
+    this.send({ kind: 'state', channelId: this.channelId, data: { paused } });
   }
 
   /** Adiciona o audio do sistema como uma segunda faixa de audio. */
   async addSystemAudioTrack(track: MediaStreamTrack): Promise<void> {
     this.systemAudioTrack = track;
     for (const entry of this.peers.values()) {
-      entry.pc.addTransceiver(track, { direction: 'sendonly' });
+      // Reusa o transceiver: chamar addTransceiver a cada transmissao
+      // acumulava m-lines de audio mortas no SDP.
+      if (entry.systemAudioTransceiver) {
+        await entry.systemAudioTransceiver.sender.replaceTrack(track);
+        if (entry.systemAudioTransceiver.direction !== 'sendonly') {
+          entry.systemAudioTransceiver.direction = 'sendonly';
+        }
+      } else {
+        entry.systemAudioTransceiver = entry.pc.addTransceiver(track, { direction: 'sendonly' });
+      }
     }
   }
 
   async removeSystemAudioTrack(): Promise<void> {
-    const track = this.systemAudioTrack;
-    if (!track) return;
+    if (!this.systemAudioTrack) return;
     for (const entry of this.peers.values()) {
-      const sender = entry.pc.getSenders().find((s) => s.track === track);
-      if (sender) entry.pc.removeTrack(sender);
+      try {
+        await entry.systemAudioTransceiver?.sender.replaceTrack(null);
+      } catch {
+        // idem
+      }
     }
     this.systemAudioTrack = null;
   }
@@ -497,6 +783,8 @@ export class PeerToPeerTransport implements VoiceTransport {
     }
     // Reanuncia a presenca: quem nao respondeu ao ICE restart recria a conexao.
     if (this.channelId) this.send({ kind: 'join', channelId: this.channelId });
+    // E reafirma a transmissao, para quem recriou a conexao saber dela.
+    if (this.localVideoTrack) this.announceSharing(true);
   }
 
   peerKeys(): string[] {

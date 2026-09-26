@@ -7,6 +7,7 @@ import { BrowserWindow, app, nativeImage, session as electronSession, shell } fr
 import { registerIpc } from './ipc';
 import { destroyTray, isQuitting, markQuitting, setCallActive, setupTray } from './background';
 import { applyCoreLimit, machineResources, readSettings, settingsPath } from './settings';
+import { initUpdater, noteCallActive, stopUpdater } from './updater';
 import type { Session as SessionType } from './session';
 
 const isDev = !app.isPackaged;
@@ -160,9 +161,15 @@ if (!app.requestSingleInstanceLock()) {
     try {
       log('info', 'app pronto, iniciando sessao');
       appSession = createSession();
-      registerIpc(appSession, () => window, app.getPath('userData'), setCallActive);
+      // O estado da chamada interessa a dois modulos: a bandeja (bloqueio de
+      // suspensao) e o updater (nao reiniciar no meio de uma call).
+      registerIpc(appSession, () => window, app.getPath('userData'), (active) => {
+        setCallActive(active);
+        noteCallActive(active);
+      });
       createWindow();
       setupTray(() => window);
+      initUpdater(() => window);
     } catch (error) {
       fatal(error);
       return;
@@ -184,6 +191,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     markQuitting();
     setCallActive(false);
+    stopUpdater();
     destroyTray();
     const { destroyOverlay } = require('./overlay') as typeof import('./overlay');
     destroyOverlay();

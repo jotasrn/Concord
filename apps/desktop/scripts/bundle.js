@@ -22,8 +22,11 @@ const desktopDir = join(__dirname, '..');
  * - better-sqlite3: binario nativo (.node).
  * - hyperswarm: puro JS, mas sua arvore usa node-gyp-build, que localiza os
  *   prebuilds por __dirname. Bundlar quebraria essa resolucao.
+ * - electron-updater: resolve app-update.yml e o cache de download por
+ *   caminhos relativos ao proprio pacote. Bundlar embaralharia isso, e uma
+ *   falha ai so aparece no app instalado - o pior lugar para descobrir.
  */
-const external = ['electron', 'better-sqlite3', 'hyperswarm'];
+const external = ['electron', 'better-sqlite3', 'hyperswarm', 'electron-updater'];
 
 const producao = process.env.NODE_ENV !== 'development';
 

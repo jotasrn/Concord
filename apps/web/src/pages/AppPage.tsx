@@ -8,6 +8,7 @@ import { CallStage } from '../features/voice/CallStage';
 import { RequestsPopup } from '../features/friends/RequestsPopup';
 import { MemberMenu } from '../features/members/MemberMenu';
 import { SettingsModal } from '../features/settings/SettingsModal';
+import { UpdateBanner } from '../features/update/UpdateBanner';
 import { StatusPicker } from '../features/profile/StatusPicker';
 import { ScreenViewer } from '../features/screenshare/ScreenViewer';
 import { SourcePicker } from '../features/screenshare/SourcePicker';
@@ -67,6 +68,24 @@ export function AppPage({ profile }: { profile: Profile }) {
 
 
   const memberNames = new Map(members.map((m) => [m.userKey, m.displayName]));
+  /**
+   * Autor de mensagem resolvido pela lista de membros, nao pelo nome gravado
+   * na operacao.
+   *
+   * A operacao message.create carrega o nome de quem enviou no momento do
+   * envio - um retrato congelado. Trocar o apelido depois nao reescreve o
+   * passado (e nem deveria: o log e imutavel), entao quem le precisa resolver
+   * o nome na hora da renderizacao. Sem isso, o apelido novo aparece na lista
+   * de membros e na chamada, mas o chat continua mostrando o antigo.
+   */
+  const membrosPorChave = new Map(members.map((m) => [m.userKey, m]));
+  const autorDaMensagem = (authorKey: string, authorName: string) => {
+    const membro = membrosPorChave.get(authorKey);
+    return {
+      nome: membro?.displayName || authorName || authorKey.slice(0, 8),
+      avatar: membro?.avatar ?? null,
+    };
+  };
   // Silenciados pela moderacao: a chamada aplica isso em quem recebe.
   const silenciados = new Set(members.filter((m) => m.muted).map((m) => m.userKey));
   const call = useVoiceCall(activeServer, memberNames, silenciados);
@@ -380,7 +399,11 @@ export function AppPage({ profile }: { profile: Profile }) {
   const voiceChannels = channels.filter((c) => c.type === 'VOICE');
 
   return (
-    <div className="flex h-full bg-void-950">
+    <div className="flex h-full flex-col bg-void-950">
+      {/* Faixa de atualizacao: ocupa a largura toda, acima de tudo. */}
+      <UpdateBanner />
+
+      <div className="flex min-h-0 flex-1">
       {/* Trilha de servidores */}
       <nav className="flex w-[68px] shrink-0 flex-col items-center gap-2 border-r border-void-800 bg-void-900 py-3">
         {servers.map((s) => (
@@ -442,8 +465,21 @@ export function AppPage({ profile }: { profile: Profile }) {
                 onAdd={() => createChannel('TEXT')}
                 items={textChannels}
                 icon={<Hash className="h-4 w-4" />}
-                activeId={activeChannel}
-                onSelect={setActiveChannel}
+                activeId={aba === 'chat' ? activeChannel : null}
+                onSelect={(id) => {
+                  setActiveChannel(id);
+                  /*
+                   * Sair do palco da chamada faz parte de clicar num canal de
+                   * texto. Sem esta linha, quem esta em call troca de canal sem
+                   * ver nada acontecer: o palco continua ocupando a area
+                   * principal e as mensagens ficam escondidas atras dele - o
+                   * unico jeito de chegar no chat era clicar no canal de voz
+                   * para alternar a aba.
+                   *
+                   * A chamada continua: so a tela volta para o chat.
+                   */
+                  setAba('chat');
+                }}
               />
               <ChannelGroup
                 label="Canais de voz"
@@ -536,6 +572,9 @@ export function AppPage({ profile }: { profile: Profile }) {
             selfName={profile.displayName}
             selfKey={profile.publicKey}
             remoteScreens={call.remoteScreens}
+            peersPausados={call.peersPausados}
+            peerVolumes={call.peerVolumes}
+            onPeerVolume={call.setPeerVolume}
             onLeave={() => {
               void call.leave();
               setAba('chat');
@@ -578,14 +617,14 @@ export function AppPage({ profile }: { profile: Profile }) {
               Nenhuma mensagem em #{currentChannel.name} ainda.
             </p>
           )}
-          {messages.map((m) => (
+          {messages.map((m) => {
+            const autor = autorDaMensagem(m.authorKey, m.authorName);
+            return (
             <article key={m.id} className="flex gap-3">
-              <Avatar name={m.authorName || '?'} userKey={m.authorKey} />
+              <Avatar name={autor.nome} userKey={m.authorKey} src={autor.avatar} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-sm font-semibold text-violet-300">
-                    {m.authorName || m.authorKey.slice(0, 8)}
-                  </span>
+                  <span className="text-sm font-semibold text-violet-300">{autor.nome}</span>
                   <time className="text-[10px] text-ink-400">
                     {new Date(m.createdAt).toLocaleString('pt-BR')}
                   </time>
@@ -594,7 +633,8 @@ export function AppPage({ profile }: { profile: Profile }) {
                 <MessageText content={m.content} />
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
 
         {currentChannel && (
@@ -770,6 +810,7 @@ export function AppPage({ profile }: { profile: Profile }) {
       {aba !== 'call' && (
         <ScreenViewer remoteScreens={call.remoteScreens} memberNames={memberNames} />
       )}
+      </div>
     </div>
   );
 }

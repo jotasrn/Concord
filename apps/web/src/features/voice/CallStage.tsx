@@ -16,6 +16,8 @@ import {
   Play,
   Repeat,
   Signal,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { Avatar } from '../../components/ui';
 import { CallState } from './useVoiceCall';
@@ -34,6 +36,8 @@ interface Tile {
   connection: RTCPeerConnectionState | null;
   latencyMs: number | null;
   quality: string | null;
+  /** Volume aplicado a esta pessoa. 1 = original. Nulo no proprio quadro. */
+  volume: number | null;
 }
 
 const CORES_QUALIDADE: Record<string, string> = {
@@ -82,14 +86,57 @@ function Video({ stream, mirrored }: { stream: MediaStream; mirrored?: boolean }
   );
 }
 
+/**
+ * Controle de volume de uma pessoa.
+ *
+ * Vai ate 200% porque o problema real e o contrario do esperado: quem fala
+ * baixo ou tem microfone ruim fica inaudivel, e atenuar nao resolve isso. Acima
+ * de 100% o audio passa por um ganho do Web Audio, entao o valor fica salvo por
+ * pessoa e volta igual na proxima chamada.
+ */
+function VolumeControl({ volume, onChange }: { volume: number; onChange: (v: number) => void }) {
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="flex items-center gap-1.5 opacity-0 transition group-hover:opacity-100"
+      title={`Volume: ${Math.round(volume * 100)}%`}
+    >
+      {volume === 0 ? (
+        <VolumeX className="h-3.5 w-3.5 shrink-0 text-status-dnd" />
+      ) : (
+        <Volume2
+          className={`h-3.5 w-3.5 shrink-0 ${volume > 1 ? 'text-violet-400' : 'text-ink-300'}`}
+        />
+      )}
+      <input
+        type="range"
+        min={0}
+        max={200}
+        step={5}
+        value={Math.round(volume * 100)}
+        onChange={(e) => onChange(Number(e.target.value) / 100)}
+        // Duplo clique volta ao original: mais rapido que acertar 100 no arraste.
+        onDoubleClick={() => onChange(1)}
+        aria-label="Volume desta pessoa"
+        className="h-1 w-16 cursor-pointer accent-violet-500"
+      />
+      <span className="w-8 shrink-0 font-mono text-[10px] text-ink-300">
+        {Math.round(volume * 100)}%
+      </span>
+    </div>
+  );
+}
+
 function TileCard({
   tile,
   onFocus,
   focused,
+  onVolume,
 }: {
   tile: Tile;
   onFocus: () => void;
   focused: boolean;
+  onVolume: (volume: number) => void;
 }) {
   return (
     <div
@@ -129,6 +176,7 @@ function TileCard({
           </span>
         )}
         {tile.muted && <MicOff className="h-3.5 w-3.5 text-status-dnd" />}
+        {tile.volume !== null && <VolumeControl volume={tile.volume} onChange={onVolume} />}
         {tile.latencyMs !== null && (
           <span
             title="Atraso medido de ponta a ponta"
@@ -175,6 +223,9 @@ export function CallStage({
   selfName,
   selfKey,
   remoteScreens,
+  peersPausados,
+  peerVolumes,
+  onPeerVolume,
   onLeave,
   onToggleMute,
   onToggleDeafen,
@@ -188,6 +239,9 @@ export function CallStage({
   selfName: string;
   selfKey: string;
   remoteScreens: Map<string, MediaStream>;
+  peersPausados: Record<string, boolean>;
+  peerVolumes: Record<string, number>;
+  onPeerVolume: (peerKey: string, volume: number) => void;
   onLeave: () => void;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
@@ -213,6 +267,8 @@ export function CallStage({
       connection: null,
       latencyMs: null,
       quality: null,
+      // Nao existe volume do proprio audio: ele nunca e reproduzido aqui.
+      volume: null,
     };
 
     const outros: Tile[] = state.participants.map((p) => ({
@@ -223,14 +279,15 @@ export function CallStage({
       speaking: false,
       muted: false,
       sharing: remoteScreens.has(p.key),
-      paused: false,
+      paused: Boolean(peersPausados[p.key]),
       connection: p.connection,
       latencyMs: p.latency?.totalMs ?? null,
       quality: p.stats?.quality ?? null,
+      volume: peerVolumes[p.key] ?? 1,
     }));
 
     return [proprio, ...outros];
-  }, [state, selfKey, selfName, remoteScreens]);
+  }, [state, selfKey, selfName, remoteScreens, peerVolumes, peersPausados]);
 
   // Se quem estava em destaque parou de transmitir, volta para a grade.
   useEffect(() => {
@@ -303,7 +360,12 @@ export function CallStage({
               <div className="flex shrink-0 gap-2 overflow-x-auto pb-1">
                 {secundarios.map((tile) => (
                   <div key={tile.key} className="w-44 shrink-0">
-                    <TileCard tile={tile} focused={false} onFocus={() => setFocado(tile.key)} />
+                    <TileCard
+                      tile={tile}
+                      focused={false}
+                      onFocus={() => setFocado(tile.key)}
+                      onVolume={(v) => onPeerVolume(tile.key, v)}
+                    />
                   </div>
                 ))}
               </div>
@@ -317,6 +379,7 @@ export function CallStage({
                 tile={tile}
                 focused={false}
                 onFocus={() => setFocado(tile.key)}
+                onVolume={(v) => onPeerVolume(tile.key, v)}
               />
             ))}
           </div>

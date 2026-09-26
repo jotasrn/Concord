@@ -17,6 +17,17 @@
 export const JITTER_TARGET_LOW = 0;
 export const JITTER_TARGET_STABLE = 0.12;
 
+/**
+ * Bitrate alvo do Opus para voz, em bits por segundo.
+ *
+ * O Chromium negocia perto de 32 kbps quando ninguem pede nada, e com pacotes
+ * de 10 ms o cabecalho come uma fatia grande disso - sobra pouco para a voz, o
+ * que da aquele timbre metalico. 64 kbps mono e o ponto onde o Opus fica
+ * transparente para fala; e menos de 1% do que uma transmissao de tela usa,
+ * entao nao ha o que economizar aqui.
+ */
+export const OPUS_BITRATE_BPS = 64_000;
+
 export interface LatencyProfile {
   id: 'ultra' | 'equilibrado';
   label: string;
@@ -106,6 +117,15 @@ export function applyOpusLowLatency(sdp: string, ptime: number): string {
     // latencia baixa expoe cada perda.
     'usedtx=0',
     'stereo=0',
+    // Mono tanto na captura quanto na reproducao: voz nao ganha nada com dois
+    // canais e o segundo canal so tiraria bits do primeiro.
+    'sprop-stereo=0',
+    // Teto E piso do encoder. Sem maxaveragebitrate o Chromium escolhe um
+    // valor conservador e a voz sai metalica.
+    `maxaveragebitrate=${OPUS_BITRATE_BPS}`,
+    // Bitrate variavel: permite gastar mais nos trechos difíceis (consoantes,
+    // ruido de fundo) e menos no resto.
+    'cbr=0',
   ];
 
   const resultado: string[] = [];

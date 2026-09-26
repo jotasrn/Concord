@@ -1,18 +1,23 @@
 {
   "name": "@concord/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
     "build": "npm run typecheck && node scripts/bundle.js && node scripts/copy-renderer.js",
     "dev": "npm run build && electron .",
     "start": "electron .",
-    "dist": "electron-builder --config electron-builder.yml --win nsis --publish never",
+    "stage": "node scripts/stage.js",
+    "predist": "npm run stage",
+    "dist": "electron-builder --config electron-builder.yml --win nsis zip --publish never",
+    "prerelease": "npm run stage",
+    "release": "electron-builder --config electron-builder.yml --win nsis zip --publish always",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@concord/core": "0.1.0",
-    "@concord/types": "0.1.0"
+    "@concord/types": "0.1.0",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@electron/fuses": "^2.1.3",

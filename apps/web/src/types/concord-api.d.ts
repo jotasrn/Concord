@@ -105,6 +105,15 @@ export interface UserProfile {
   bio: string | null;
 }
 
+export interface UpdateStatus {
+  state: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'unsupported' | 'error';
+  version: string | null;
+  percent: number;
+  message: string | null;
+  /** Atualizacao baixada, mas represada porque ha chamada em andamento. */
+  waitingForCall: boolean;
+}
+
 export interface Profile {
   displayName: string;
   publicKey: string;
@@ -182,6 +191,12 @@ export interface ConcordApi {
     usage(): Promise<StorageUsage>;
     prune(olderThanDays: number): Promise<{ removed: number }>;
     setCallActive(active: boolean): Promise<boolean>;
+  };
+  update: {
+    status(): Promise<UpdateStatus>;
+    check(): Promise<UpdateStatus>;
+    install(): Promise<{ ok: boolean; motivo?: string }>;
+    onStatus(handler: (status: UpdateStatus) => void): () => void;
   };
   profile: {
     update(profile: { displayName: string; avatar: string | null; bio: string | null }): Promise<boolean>;

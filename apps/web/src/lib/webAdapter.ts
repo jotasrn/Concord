@@ -159,6 +159,30 @@ export async function installWebAdapter(): Promise<void> {
       prune: (days: number) => call('settings:prune', days),
       setCallActive: (active: boolean) => call('settings:callActive', active),
     },
+    /**
+     * No navegador a pagina se atualiza sozinha ao recarregar: nao ha binario
+     * para substituir. Os stubs mantem a UI funcionando sem ramificar.
+     */
+    update: {
+      status: () =>
+        Promise.resolve({
+          state: 'unsupported' as const,
+          version: null,
+          percent: 0,
+          message: 'Recarregue a pagina para pegar a versao nova',
+          waitingForCall: false,
+        }),
+      check: () =>
+        Promise.resolve({
+          state: 'unsupported' as const,
+          version: null,
+          percent: 0,
+          message: 'Recarregue a pagina para pegar a versao nova',
+          waitingForCall: false,
+        }),
+      install: () => Promise.resolve({ ok: false, motivo: 'Indisponivel na versao web' }),
+      onStatus: () => () => undefined,
+    },
     profile: {
       update: (p: unknown) => call('profile:update', p),
       get: (uk: string) => call('profile:get', uk),

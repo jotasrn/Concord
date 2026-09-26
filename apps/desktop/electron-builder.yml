@@ -47,6 +47,17 @@ nsis:
   shortcutName: Concord
 npmRebuild: true
 
+# Atualizacao automatica. O electron-updater le este bloco de app-update.yml
+# (gravado no pacote) para saber onde procurar versoes novas.
+#
+# O repositorio precisa ser PUBLICO: num privado o download exigiria um token
+# do GitHub embutido no app - e qualquer usuario poderia extrai-lo do asar.
+publish:
+  provider: github
+  owner: jotasrn
+  repo: Concord
+  releaseType: release
+
 # Fuses gravados no binario apos o empacotamento (electron-builder 25 ainda
 # nao expoe electronFuses na configuracao).
 afterPack: scripts/afterPack.js

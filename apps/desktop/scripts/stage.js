@@ -10,6 +10,7 @@
 const { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const { join } = require('node:path');
+const { tmpdir } = require('node:os');
 
 const desktopDir = join(__dirname, '..');
 const repoRoot = join(desktopDir, '..', '..');
@@ -88,6 +89,8 @@ writeFileSync(
         // types, bip39) foi inlinado no bundle pelo esbuild.
         'better-sqlite3': require(join(repoRoot, 'node_modules', 'better-sqlite3', 'package.json')).version,
         hyperswarm: require(join(repoRoot, 'node_modules', 'hyperswarm', 'package.json')).version,
+        'electron-updater': require(join(repoRoot, 'node_modules', 'electron-updater', 'package.json'))
+          .version,
       },
     },
     null,
@@ -95,9 +98,18 @@ writeFileSync(
   ),
 );
 
-// 3. Instala a arvore de producao dentro do staging, isolada da raiz.
+/*
+ * 3. Instala a arvore de producao dentro do staging, isolada da raiz.
+ *
+ * Com cache proprio, e nao o do usuario. O cache global do npm pode ficar em
+ * um estado em que todo download falha com EEXIST em _cacache/tmp - e quando
+ * isso acontece, o unico sintoma e que nao da mais para gerar instalador, num
+ * erro que nao tem relacao nenhuma com o projeto. Este diretorio fica no temp
+ * do sistema, entao persiste entre builds e nao pesa no repositorio.
+ */
+const cache = join(tmpdir(), 'concord-npm-cache');
 console.log('instalando dependencias de producao em staging...');
-execFileSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund'], {
+execFileSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--cache', cache], {
   cwd: staging,
   stdio: 'inherit',
   shell: true,

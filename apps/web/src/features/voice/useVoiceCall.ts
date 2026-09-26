@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AudioEngine, AudioEngineState, TransmitMode } from './audio/AudioEngine';
+import { RemoteAudioMixer, VOLUME_MAXIMO } from './audio/RemoteAudioMixer';
 import { sounds } from './audio/SoundEffects';
 import { PeerToPeerTransport } from './transport/PeerToPeerTransport';
 import { ScreenStats, VoiceStats } from './transport/VoiceTransport';
@@ -79,8 +80,19 @@ export function useVoiceCall(
   stateRef.current = state;
   const engineRef = useRef<AudioEngine | null>(null);
   const transportRef = useRef<PeerToPeerTransport | null>(null);
-  const audioElements = useRef(new Map<string, HTMLAudioElement>());
-  const videoElements = useRef(new Map<string, MediaStream>());
+  const mixerRef = useRef(new RemoteAudioMixer());
+  /**
+   * Telas remotas em estado do React, nao em ref.
+   *
+   * Antes isto era um ref e a lista era recalculada a cada render, entao a
+   * chegada de uma tela nova dependia de um render acontecer por outro motivo.
+   * Como estado, a tela aparece no instante em que a faixa chega.
+   */
+  const [remoteScreens, setRemoteScreens] = useState<Map<string, MediaStream>>(new Map());
+  /** Volume por pessoa, 1 = original. Espelha o mixer para a UI poder mostrar. */
+  const [peerVolumes, setPeerVolumes] = useState<Record<string, number>>({});
+  /** Quem congelou a propria transmissao, para a imagem parada ter explicacao. */
+  const [peersPausados, setPeersPausados] = useState<Record<string, boolean>>({});
   const screenRef = useRef(new ScreenShareEngine());
   const serverIdRef = useRef(serverId);
   serverIdRef.current = serverId;
@@ -112,46 +124,44 @@ export function useVoiceCall(
 
 
 
-  /**
-   * Separa tracks de audio e video do stream remoto.
-   * Audio vai para elementos <audio> (invisíveis); video e guardado no Map
-   * de streams para renderizar no ScreenShareOverlay.
-   */
-  const anexarStream = useCallback((peerKey: string, stream: MediaStream) => {
-    const audioTracks = stream.getAudioTracks();
-    const videoTracks = stream.getVideoTracks();
-
-    if (audioTracks.length > 0) {
-      let element = audioElements.current.get(peerKey);
-      if (!element) {
-        element = new Audio();
-        element.autoplay = true;
-        audioElements.current.set(peerKey, element);
-      }
-      element.srcObject = stream;
-      // Silenciado pela moderacao nao toca, mesmo que continue enviando.
-      element.muted = mutedRef.current.has(peerKey);
-      void element.play().catch(() => undefined);
-    }
-
-    if (videoTracks.length > 0) {
-      videoElements.current.set(peerKey, stream);
-    } else {
-      // Sem video: o peer parou de transmitir.
-      videoElements.current.delete(peerKey);
-    }
-    // Re-render para o painel refletir quem esta transmitindo agora.
-    setState((s) => ({ ...s }));
+  /** Audio de um peer: vai para o mixer, que cuida de volume e silenciamento. */
+  const anexarAudio = useCallback((peerKey: string, stream: MediaStream) => {
+    const mixer = mixerRef.current;
+    mixer.attach(peerKey, stream);
+    // Silenciado pela moderacao nao toca, mesmo que continue enviando.
+    mixer.setMuted(peerKey, mutedRef.current.has(peerKey));
+    setPeerVolumes((v) => (peerKey in v ? v : { ...v, [peerKey]: mixer.volumeDe(peerKey) }));
   }, []);
 
-  const desanexarAudio = useCallback((peerKey: string) => {
-    const element = audioElements.current.get(peerKey);
-    if (element) {
-      element.srcObject = null;
-      audioElements.current.delete(peerKey);
-    }
-    videoElements.current.delete(peerKey);
-    setState((s) => ({ ...s }));
+  /** Tela de um peer, ou null quando ele para de transmitir. */
+  const anexarTela = useCallback((peerKey: string, stream: MediaStream | null) => {
+    setRemoteScreens((atual) => {
+      if (!stream) {
+        if (!atual.has(peerKey)) return atual;
+        const proximo = new Map(atual);
+        proximo.delete(peerKey);
+        return proximo;
+      }
+      if (atual.get(peerKey) === stream) return atual;
+      return new Map(atual).set(peerKey, stream);
+    });
+  }, []);
+
+  const desanexarPeer = useCallback((peerKey: string) => {
+    mixerRef.current.detach(peerKey);
+    setRemoteScreens((atual) => {
+      if (!atual.has(peerKey)) return atual;
+      const proximo = new Map(atual);
+      proximo.delete(peerKey);
+      return proximo;
+    });
+  }, []);
+
+  /** Volume de uma pessoa. 1 = original, ate VOLUME_MAXIMO de reforco. */
+  const setPeerVolume = useCallback((peerKey: string, volume: number) => {
+    const limitado = Math.min(VOLUME_MAXIMO, Math.max(0, volume));
+    mixerRef.current.setVolume(peerKey, limitado);
+    setPeerVolumes((v) => ({ ...v, [peerKey]: limitado }));
   }, []);
 
   const leave = useCallback(async () => {
@@ -161,13 +171,14 @@ export function useVoiceCall(
     await engineRef.current?.stop();
     transportRef.current = null;
     engineRef.current = null;
-    for (const key of [...audioElements.current.keys()]) desanexarAudio(key);
-    videoElements.current.clear();
+    mixerRef.current.stop();
+    setRemoteScreens(new Map());
+    setPeersPausados({});
     void window.concord.presence.setVoiceChannel(null).catch(() => undefined);
     void window.concord.settings.setCallActive(false).catch(() => undefined);
     sounds.play('leave');
     setState(ESTADO_INICIAL);
-  }, [desanexarAudio]);
+  }, []);
 
   const join = useCallback(
     async (channelId: string, channelName: string, selfKey: string) => {
@@ -198,12 +209,22 @@ export function useVoiceCall(
             if (sid) void window.concord.voice.signal(sid, signal);
           },
           {
-            onStream: (peerKey, stream) => {
-              anexarStream(peerKey, stream);
+            onAudio: (peerKey, stream) => {
+              anexarAudio(peerKey, stream);
               atualizarParticipantes();
             },
+            onScreen: (peerKey, stream) => {
+              anexarTela(peerKey, stream);
+              atualizarParticipantes();
+            },
+            onScreenPaused: (peerKey, paused) => {
+              setPeersPausados((atual) => {
+                if (Boolean(atual[peerKey]) === paused) return atual;
+                return { ...atual, [peerKey]: paused };
+              });
+            },
             onPeerLeft: (peerKey) => {
-              desanexarAudio(peerKey);
+              desanexarPeer(peerKey);
               sounds.play('peerLeave');
               atualizarParticipantes();
             },
@@ -248,7 +269,7 @@ export function useVoiceCall(
         });
       }
     },
-    [atualizarParticipantes, desanexarAudio, leave, nomeDe],
+    [anexarAudio, anexarTela, atualizarParticipantes, desanexarPeer, leave, nomeDe],
   );
 
   // Sinais vindos dos peers.
@@ -291,7 +312,7 @@ export function useVoiceCall(
   const toggleDeafen = useCallback(() => {
     setState((s) => {
       const deafened = !s.deafened;
-      for (const element of audioElements.current.values()) element.muted = deafened;
+      mixerRef.current.setDeafened(deafened);
       sounds.play(deafened ? 'deafen' : 'unmute');
       return { ...s, deafened };
     });
@@ -377,6 +398,7 @@ export function useVoiceCall(
     const track = engine.isPaused() ? engine.resume() : await engine.pause();
     if (track) await transportRef.current?.replaceVideoTrack(track);
 
+    transportRef.current?.announcePaused(engine.isPaused());
     sounds.play(engine.isPaused() ? 'mute' : 'unmute');
     setState((s) => ({ ...s, screenPaused: engine.isPaused() }));
   }, []);
@@ -433,34 +455,19 @@ export function useVoiceCall(
 
   // A lista de silenciados muda por operacao vinda da rede; reaplica na hora.
   useEffect(() => {
-    for (const [peerKey, element] of audioElements.current) {
-      element.muted = mutedKeys.has(peerKey) || stateRef.current.deafened;
-    }
+    const mixer = mixerRef.current;
+    for (const peerKey of mixer.keys()) mixer.setMuted(peerKey, mutedKeys.has(peerKey));
   }, [mutedKeys]);
 
   useEffect(() => {
+    const mixer = mixerRef.current;
     return () => {
       void transportRef.current?.disconnect();
       void engineRef.current?.stop();
       void screenRef.current.stop();
+      mixer.stop();
     };
   }, []);
-
-  /**
-   * Telas remotas ativas.
-   *
-   * Filtra por faixa viva: um peer que parou de transmitir deixa o stream no
-   * mapa, e sem esta checagem continuaria aparecendo como se ainda estivesse
-   * compartilhando.
-   */
-  const remoteScreens = new Map(
-    [...videoElements.current].filter(([, stream]) =>
-      // Apenas readyState: `muted` fica true durante qualquer interrupcao
-      // momentanea do fluxo, e usar isso aqui fazia a tela sumir a cada
-      // oscilacao de rede em vez de apenas congelar por um instante.
-      stream.getVideoTracks().some((t) => t.readyState === 'live'),
-    ),
-  );
 
   return {
     state,
@@ -476,5 +483,8 @@ export function useVoiceCall(
     switchScreenSource,
     applyScreenQuality,
     remoteScreens,
+    peersPausados,
+    peerVolumes,
+    setPeerVolume,
   };
 }

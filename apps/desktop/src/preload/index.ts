@@ -177,6 +177,17 @@ const api = {
       call<{ removed: number }>('settings:prune', olderThanDays),
     setCallActive: (active: boolean) => call<boolean>('settings:callActive', active),
   },
+  update: {
+    status: () => call<import('../main/updater').UpdateStatus>('update:status'),
+    check: () => call<import('../main/updater').UpdateStatus>('update:check'),
+    install: () => call<{ ok: boolean; motivo?: string }>('update:install'),
+    onStatus: (handler: (status: import('../main/updater').UpdateStatus) => void) => {
+      const listener = (_e: unknown, status: import('../main/updater').UpdateStatus) =>
+        handler(status);
+      ipcRenderer.on('update:status', listener);
+      return () => ipcRenderer.removeListener('update:status', listener);
+    },
+  },
   profile: {
     update: (profile: { displayName: string; avatar: string | null; bio: string | null }) =>
       call<boolean>('profile:update', profile),

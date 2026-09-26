@@ -379,6 +379,13 @@ export function registerSettingsIpc(
       return true;
     }),
   );
+
+  // ---------- atualizacao ----------
+  const updater = require('./updater') as typeof import('./updater');
+
+  ipcMain.handle('update:status', () => wrap(() => updater.updateStatus()));
+  ipcMain.handle('update:check', () => wrap(() => updater.check()));
+  ipcMain.handle('update:install', () => wrap(() => updater.installNow()));
 }
 
 /** Overlay flutuante que aparece sobre jogos. */

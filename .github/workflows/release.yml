@@ -24,9 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22, nao 20: o script de teste do core passa um glob
+      # ("dist/**/*.test.js") direto para `node --test`, e a expansao de glob
+      # pelo proprio runner so existe a partir do Node 22. No Node 20 ele nao
+      # encontra arquivo nenhum e falha.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Instalar dependencias

@@ -35,11 +35,10 @@ porta fica fechada de proposito.
 O nome do repositorio esta em dois lugares, se precisar mudar:
 `publish:` em [`electron-builder.yml`](../apps/desktop/electron-builder.yml).
 
-Publicando:
-
-```bash
-npm version 0.3.0 --workspaces --include-workspace-root --no-git-tag-version
-```
+Publicando: troque `version` em `package.json` e em
+`apps/desktop/package.json` - so nesses dois. `npm version --workspaces`
+reescreveria tambem os pacotes internos e as dependencias que apontam para
+eles, o que quebra o build por um ganho nenhum.
 
 ```bash
 git commit -am "Versao 0.3.0" && git tag v0.3.0 && git push origin master --tags

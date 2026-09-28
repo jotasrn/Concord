@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Clock, Send, Trash2, UserPlus } from 'lucide-react';
+import { Clock, Phone, Send, Trash2, UserPlus } from 'lucide-react';
 import { Avatar, Button, ErrorBanner, Input } from '../../components/ui';
 import type { Friend, PresenceStatus, ServerView } from '../../types/concord-api';
 
@@ -14,10 +14,13 @@ export function FriendsPanel({
   servers,
   presencaDe,
   onChanged,
+  onCall,
 }: {
   servers: ServerView[];
   presencaDe: (userKey: string) => PresenceStatus;
   onChanged: () => void;
+  /** Liga direto para o amigo, fora de qualquer servidor. */
+  onCall: (userKey: string, displayName: string, avatar: string | null) => void;
 }) {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [chave, setChave] = useState('');
@@ -186,6 +189,16 @@ export function FriendsPanel({
                 #{f.userKey.slice(0, 8)}
               </p>
             </div>
+
+            {presencaDe(f.userKey) !== 'OFFLINE' && (
+              <button
+                title={`Ligar para ${f.displayName || 'esta pessoa'}`}
+                onClick={() => onCall(f.userKey, f.displayName || `#${f.userKey.slice(0, 8)}`, f.avatar)}
+                className="rounded-full bg-status-online/15 p-1.5 text-status-online transition hover:bg-status-online/25"
+              >
+                <Phone className="h-3.5 w-3.5" />
+              </button>
+            )}
 
             {servers.length > 0 && (
               <select

@@ -1,109 +1,91 @@
 # WebRTC
 
-> **Estado:** a infraestrutura (coturn, contratos de sinalizacao em `packages/types`) esta pronta.
-> A implementacao de `WebRTCService` e dos gateways de voz entra nas Fases 7–10.
+Nao ha SFU nem servidor de sinalizacao dedicado. A sinalizacao viaja pela
+mesma conexao Hyperswarm ja aberta e cifrada entre os dois peers - a diferenca
+para uma chamada de canal e uma chamada direta e so **por onde** a mensagem
+entra na malha, nunca como o WebRTC em si funciona. Implementacao em
+`apps/web/src/features/voice/transport/PeerToPeerTransport.ts`.
 
 ## Topologia
 
-Malha P2P (full mesh) para ate ~6 participantes. Justificativa e limites em
-[ARCHITECTURE.md](ARCHITECTURE.md#4-webrtc-malha-mesh-no-mvp-sfu-depois).
+Malha completa (full mesh): uma `RTCPeerConnection` por participante. Cada
+pessoa envia sua propria faixa a todo mundo e recebe uma de cada um dos
+outros. Escala bem ate ~6-8 participantes; acima disso o upload de quem
+transmite vira o gargalo, porque a mesma faixa e enviada N-1 vezes. Um SFU
+resolveria isso centralizando o encaminhamento - mas exigiria um servidor, o
+que contradiz a premissa do projeto. `VoiceTransport` (interface em
+`transport/VoiceTransport.ts`) existe justamente para isolar essa decisao: se
+um dia fizer sentido trocar a malha por um SFU, a camada de audio (motor,
+medidores, VAD) nao muda uma linha.
 
-## Fluxo de sinalizacao
+## Sinalizacao: dois caminhos, mesmo protocolo
 
-O servidor NestJS roteia SDP e ICE candidates entre pares — nunca inspeciona nem reescreve o
-conteudo. A midia nao passa pela API.
+| | Canal de voz de servidor | Chamada direta |
+| --- | --- | --- |
+| Transporte | `voice:signal` (IPC) → cifrado com a chave do servidor | `calls:signal` (IPC) → sem cifra propria, a conexao ja e direta e autenticada |
+| Alcance | difunde para todos no canal, ou so para um `to` especifico | sempre 1 destinatario |
+| `channelId` | o canal de voz de verdade | um `callId` (UUID) gerado na hora de ligar |
 
-```
-Usuario A                  Signaling (Socket.IO)                 Usuario B
-    │                              │                                 │
-    │──── voice:join ─────────────▶│                                 │
-    │                              │──── rtc:peer-joined ───────────▶│
-    │                              │                                 │
-    │  createOffer()               │                                 │
-    │──── rtc:offer ──────────────▶│──── rtc:offer ─────────────────▶│
-    │                              │                    createAnswer()│
-    │◀─── rtc:answer ──────────────│◀─── rtc:answer ─────────────────│
-    │                              │                                 │
-    │──── rtc:ice-candidate ──────▶│──── rtc:ice-candidate ─────────▶│
-    │◀─── rtc:ice-candidate ───────│◀─── rtc:ice-candidate ──────────│
-    │                              │                                 │
-    │◀═════════ midia SRTP direta (ou via TURN) ══════════════════▶ │
-```
+Os sinais em si (`join`, `offer`, `answer`, `ice`, `state`, `leave`) sao os
+mesmos nos dois casos - so muda o envelope que carrega cada um ate o peer
+certo.
 
-Os nomes de evento e os formatos de payload sao definidos em
-[`packages/types/src/events.ts`](../packages/types/src/events.ts) e importados pelos dois lados,
-para que um typo quebre o build em vez de criar um canal morto.
+## Perfect negotiation
 
-## Regras de implementacao
+Dois peers podem tentar renegociar ao mesmo tempo (ex: os dois comecam a
+compartilhar tela junto). Em vez de coordenar quem fala primeiro, cada par
+decide sozinho quem cede numa colisao: comparando as chaves publicas (`polite = minhaChave < chaveDoOutro`),
+o resultado e deterministico e identico dos dois lados sem round-trip extra.
 
-1. **Toda a logica de PeerConnection fica em `WebRTCService`**, fora dos componentes React.
-   Um `useEffect` que cria PeerConnections roda duas vezes sob StrictMode e vaza conexoes.
-2. **Perfect negotiation**: cada par define um lado `polite` (determinado por comparacao dos IDs
-   de usuario) para resolver colisao de offers sem deadlock.
-3. **Trickle ICE**: candidates sao enviados assim que aparecem, sem esperar o fim da coleta.
-4. **Streams separados por tipo**: microfone, camera e tela sao tracks distintas na mesma
-   PeerConnection. Compartilhar tela usa `replaceTrack` em vez de renegociar do zero quando
-   possivel.
-5. **Qualidade de conexao vem de `getStats()`** — `roundTripTime`, `packetsLost`, `jitter`.
-   O indicador na UI reflete metricas reais, nunca um valor estimado.
+Sinais de um mesmo peer sao processados **em fila**, um por vez
+(`PeerToPeerTransport` mantem uma `Promise` encadeada por peer). Sem isso,
+dois sinais que chegam juntos entram em `handleSignal` ao mesmo tempo e se
+atropelam nos `await` - foi exatamente o que travava a imagem quando duas
+pessoas comecavam a transmitir tela ao mesmo tempo.
 
-## STUN / TURN
+## Latencia
 
-- **STUN**: descobre o IP publico do cliente. Resolve a maioria dos NATs domesticos.
-- **TURN**: relay de midia quando a conexao direta e impossivel (NAT simetrico, redes
-  corporativas). Custa banda do servidor — todo o trafego passa por ele.
+Dois perfis (`transport/lowLatency.ts`):
 
-Na pratica, ~10–20% das conexoes precisam de TURN. Sem TURN configurado, esses usuarios
-simplesmente nao conseguem se conectar, e o sintoma e uma call que "fica conectando" sem erro
-explicito.
+| Perfil | Jitter buffer | `ptime` do Opus | Compressor |
+| --- | --- | --- | --- |
+| **Ultra** (padrao) | 0s (`jitterBufferTarget`) | 10ms | desligado |
+| **Equilibrado** | 0.12s | 20ms | ligado |
 
-### Configuracao local
+`ptime=10` reescreve o SDP para pedir pacotes de 10ms em vez dos 20ms que o
+Chromium negocia por padrao - corta metade do atraso de empacotamento.
+`usedtx=0` mantem o encoder transmitindo no silencio: DTX cortaria a primeira
+silaba de cada fala. O bitrate e fixado em 64kbps mono
+(`OPUS_BITRATE_BPS`), porque sem isso o Chromium fica perto de 32kbps e a voz
+fica metalica bem no momento em que uma transmissao de tela divide o mesmo
+caminho de rede.
 
-```bash
-cp infrastructure/turn/turnserver.conf.example infrastructure/turn/turnserver.conf
-```
+## Codecs de video
 
-Troque `CHANGE_ME` pela senha de `TURN_PASSWORD` no `.env`. O arquivo `turnserver.conf` real e
-gitignorado por conter o segredo.
+`RTCRtpTransceiver.setCodecPreferences` prioriza **AV1 > VP9 > VP8 > H264**
+para compartilhamento de tela: os dois primeiros comprimem texto e areas
+estaticas muito melhor, o que importa justamente em codigo e planilha, onde
+borrao e inaceitavel.
 
-```bash
-docker compose up -d coturn
-```
+## Deteccao de fala
 
-O coturn roda com `network_mode: host`. Isso e necessario: o relay usa uma faixa dinamica de
-portas UDP (49160–49200 na configuracao padrao) e mapear cada uma via bridge do Docker e
-impraticavel.
+`getSynchronizationSources()` no receptor de audio devolve o `audioLevel` que
+o proprio WebRTC ja calculou ao decodificar - sem custo extra, sem
+`AnalyserNode` proprio. Um limiar com um pouco de histerese (300ms) decide
+"esta falando" sem piscar entre silabas.
 
-### Verificar se o TURN responde
+## Recuperacao de conexao
 
-Use o [Trickle ICE do WebRTC](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/)
-com `turn:localhost:3478`, usuario `concord` e a senha configurada. Um candidate do tipo `relay`
-confirma que o TURN esta funcionando.
+`disconnected` no WebRTC nunca vira `failed` sozinho quando a rede volta a
+funcionar - a conexao so fica presa. Um temporizador de 4s forca
+`restartIce()` se o estado nao se resolver sozinho nesse tempo.
+`reconnectAll()` (botao manual na interface) faz o mesmo para todos os peers
+de uma vez, para quando a recuperacao automatica ainda nao agiu.
 
-### Producao
+## Sem TURN
 
-Tres mudancas obrigatorias em relacao ao dev:
-
-1. **`external-ip`**: descomente e aponte para o IP publico do host. Sem isso o coturn anuncia o
-   IP privado e o relay falha atras de cloud NAT.
-2. **Credenciais temporarias**: troque `lt-cred-mech` + usuario fixo por `use-auth-secret` com
-   `static-auth-secret`. A API passa a gerar credenciais HMAC com validade curta por sessao, em
-   vez de expor uma senha permanente ao cliente.
-3. **TLS**: habilite `cert`/`pkey` na porta 5349 (TURNS). Redes que bloqueiam UDP frequentemente
-   liberam TCP 443 — vale expor TURNS nessa porta.
-
-Abra no firewall: **3478/udp**, **3478/tcp**, **5349/tcp** e a faixa de relay **49160–49200/udp**.
-
-## Testes obrigatorios antes de considerar a fase concluida
-
-Com dois navegadores em maquinas diferentes (nao duas abas na mesma maquina — isso nao exercita
-o NAT):
-
-- [ ] Audio nos dois sentidos
-- [ ] Video nos dois sentidos
-- [ ] Compartilhamento de tela
-- [ ] Troca de tela compartilhada sem derrubar a call
-- [ ] Entrada de um terceiro participante
-- [ ] Saida de um participante sem afetar os demais
-- [ ] Reconexao apos queda de rede (ICE restart)
-- [ ] Conexao forcando relay (`iceTransportPolicy: 'relay'`) para validar o TURN
+So ha STUN publico (`stun.l.google.com`, `stun1.l.google.com`). Cobre a
+maioria das combinacoes de NAT via hole punching; NAT simetrico dos dois
+lados ao mesmo tempo pode falhar em conectar. Adicionar TURN exigiria um
+servidor relay - de novo, contra a premissa do projeto - entao essa e uma
+limitacao conhecida e aceita, nao um bug.

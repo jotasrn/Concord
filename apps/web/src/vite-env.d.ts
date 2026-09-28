@@ -8,3 +8,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/** Versao do monorepo, embutida em build por vite.config.ts. */
+declare const __CONCORD_VERSION__: string;

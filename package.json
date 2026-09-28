@@ -1,7 +1,7 @@
 {
   "name": "concord",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Concord - plataforma de comunicacao P2P para gamers (sem servidor)",
   "workspaces": [
     "apps/*",

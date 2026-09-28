@@ -148,6 +148,15 @@ export async function installWebAdapter(): Promise<void> {
     },
     onSocialEvent: (handler: (evento: string, dados: unknown) => void) =>
       onPush('social:event', (e, d) => handler(e as string, d)),
+    // Chamada direta depende do Hyperswarm do processo principal do Electron;
+    // o cliente web fala com o backend por WebSocket e nao tem acesso a isso.
+    calls: {
+      invite: () => Promise.resolve('na-fila' as const),
+      respond: () => Promise.resolve(false),
+      end: () => Promise.resolve(false),
+      signal: () => Promise.resolve(false),
+      onSignal: () => () => undefined,
+    },
     overlay: {
       update: () => Promise.resolve(true),
       hide: () => Promise.resolve(true),
@@ -203,6 +212,10 @@ export async function installWebAdapter(): Promise<void> {
     },
     network: {
       status: () => call('network:status'),
+    },
+    // Sem processo Electron para perguntar: usa a versao gravada no build.
+    app: {
+      version: () => Promise.resolve(__CONCORD_VERSION__),
     },
     onSyncUpdate: (handler: (serverId: string) => void) =>
       onPush('sync:updated', (sid) => handler(sid as string)),

@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, app, ipcMain } from 'electron';
 import { Session } from './session';
 
 /**
@@ -212,6 +212,11 @@ export function registerIpc(
   ipcMain.handle('network:status', () =>
     wrap(() => ({ peers: session.peerCount(), online: session.isUnlocked() })),
   );
+
+  // A versao empacotada (electron-builder le do package.json do app), para a
+  // interface poder mostrar o que esta instalado - util para saber se o
+  // auto-update ja pegou, e para comparar com o que outra pessoa tem.
+  ipcMain.handle('app:version', () => wrap(() => app.getVersion()));
 
   registerVoiceAndInviteIpc(session);
   registerScreenIpc();
@@ -445,6 +450,33 @@ export function registerSocialIpc(session: Session): void {
   ipcMain.handle('invites:decline', (_e, serverId: string) =>
     wrap(() => {
       session.declineServerInvite(serverId);
+      return true;
+    }),
+  );
+
+  // ---------- chamada direta ----------
+
+  ipcMain.handle('calls:invite', (_e, targetKey: string, callId: string) =>
+    wrap(() => session.callInvite(targetKey, callId)),
+  );
+
+  ipcMain.handle('calls:respond', (_e, targetKey: string, callId: string, accepted: boolean) =>
+    wrap(async () => {
+      await session.callRespond(targetKey, callId, accepted);
+      return true;
+    }),
+  );
+
+  ipcMain.handle('calls:end', (_e, targetKey: string, callId: string) =>
+    wrap(async () => {
+      await session.callEnd(targetKey, callId);
+      return true;
+    }),
+  );
+
+  ipcMain.handle('calls:signal', (_e, targetKey: string, signal: unknown) =>
+    wrap(() => {
+      session.sendCallSignal(targetKey, signal);
       return true;
     }),
   );

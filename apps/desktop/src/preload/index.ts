@@ -135,6 +135,20 @@ const api = {
     ipcRenderer.on('social:event', listener);
     return () => ipcRenderer.removeListener('social:event', listener);
   },
+  calls: {
+    invite: (targetKey: string, callId: string) =>
+      call<'entregue' | 'na-fila'>('calls:invite', targetKey, callId),
+    respond: (targetKey: string, callId: string, accepted: boolean) =>
+      call<boolean>('calls:respond', targetKey, callId, accepted),
+    end: (targetKey: string, callId: string) => call<boolean>('calls:end', targetKey, callId),
+    signal: (targetKey: string, signal: unknown) =>
+      call<boolean>('calls:signal', targetKey, signal),
+    onSignal: (handler: (callId: string, signal: any) => void) => {
+      const listener = (_e: unknown, callId: string, signal: any) => handler(callId, signal);
+      ipcRenderer.on('call:incoming-signal', listener);
+      return () => ipcRenderer.removeListener('call:incoming-signal', listener);
+    },
+  },
   overlay: {
     update: (
       participants: {
@@ -237,6 +251,9 @@ const api = {
   },
   network: {
     status: () => call<{ peers: number; online: boolean }>('network:status'),
+  },
+  app: {
+    version: () => call<string>('app:version'),
   },
   /** Avisa sobre servidores antigos migrados ou sem chave. */
   onMigrationNotice: (handler: (info: { migrados: number; semChave: string[] }) => void) => {

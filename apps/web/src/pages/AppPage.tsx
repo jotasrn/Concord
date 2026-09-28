@@ -15,6 +15,8 @@ import { SourcePicker } from '../features/screenshare/SourcePicker';
 import type { CaptureSource } from '../features/screenshare/ScreenShareEngine';
 import type { ScreenQuality } from '../features/screenshare/presets';
 import { useVoiceCall } from '../features/voice/useVoiceCall';
+import { useDirectCall } from '../features/voice/useDirectCall';
+import { DirectCallOverlay } from '../features/voice/DirectCallOverlay';
 import { useServerData } from '../hooks/useServerData';
 import { sounds } from '../features/voice/audio/SoundEffects';
 import type {
@@ -37,7 +39,7 @@ export function AppPage({ profile }: { profile: Profile }) {
   const [info, setInfo] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [prompt, setPrompt] = useState<PromptRequest | null>(null);
-  const [picker, setPicker] = useState<'novo' | 'trocar' | null>(null);
+  const [picker, setPicker] = useState<'novo' | 'trocar' | 'novo-dm' | null>(null);
   // Ao entrar numa chamada o palco assume a area principal; a aba deixa voltar
   // para o chat sem sair da call.
   const [aba, setAba] = useState<'chat' | 'call'>('chat');
@@ -48,6 +50,7 @@ export function AppPage({ profile }: { profile: Profile }) {
   const [pedidosAmizade, setPedidosAmizade] = useState<Friend[]>([]);
   const [convitesPendentes, setConvitesPendentes] = useState<PendingInvite[]>([]);
   const [membroAberto, setMembroAberto] = useState<string | null>(null);
+  const [versaoApp, setVersaoApp] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const report = (e: unknown) => setError(e instanceof Error ? e.message : 'Erro inesperado');
@@ -89,6 +92,14 @@ export function AppPage({ profile }: { profile: Profile }) {
   // Silenciados pela moderacao: a chamada aplica isso em quem recebe.
   const silenciados = new Set(members.filter((m) => m.muted).map((m) => m.userKey));
   const call = useVoiceCall(activeServer, memberNames, silenciados);
+  /*
+   * Uma so chamada por vez. useDirectCall consulta este predicado antes de
+   * ligar ou de mostrar um convite recebido - se ja ha uma chamada de
+   * servidor em andamento, a nova chamada e recusada sem interromper quem
+   * esta ocupado. Trocar de microfone e mixer de audio no meio de uma call
+   * ativa causaria disputa entre os dois motores por cima do mesmo hardware.
+   */
+  const directCall = useDirectCall(profile.publicKey, () => Boolean(call.state.channelId));
 
   // O proprio perfil sai da lista de membros, que ja vem com avatar e bio.
   const meuMembro = members.find((m) => m.userKey === profile.publicKey);
@@ -150,6 +161,10 @@ export function AppPage({ profile }: { profile: Profile }) {
   };
   const donoDoServidor = servers.find((s) => s.id === activeServer)?.ownerKey ?? null;
   const souDono = donoDoServidor === profile.publicKey;
+
+  useEffect(() => {
+    void window.concord.app.version().then(setVersaoApp).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let failCount = 0;
@@ -503,6 +518,8 @@ export function AppPage({ profile }: { profile: Profile }) {
                   if (call.state.channelId === id) {
                     // Ja esta neste canal: o clique alterna entre palco e chat.
                     setAba((a) => (a === 'call' ? 'chat' : 'call'));
+                  } else if (directCall.state.phase !== 'idle') {
+                    setError('Encerre a chamada direta antes de entrar num canal de voz.');
                   } else {
                     void call.join(id, canal.name, profile.publicKey);
                     setAba('call');
@@ -567,6 +584,14 @@ export function AppPage({ profile }: { profile: Profile }) {
                 />
                 {networkError ? 'offline' : peers}
               </span>
+              {versaoApp && (
+                <span
+                  className="font-mono text-[10px] text-ink-400"
+                  title="Versao instalada - o auto-update mantem isso igual em todo mundo"
+                >
+                  v{versaoApp}
+                </span>
+              )}
             </div>
           </div>
           <button
@@ -784,9 +809,11 @@ export function AppPage({ profile }: { profile: Profile }) {
         <SourcePicker
           onCancel={() => setPicker(null)}
           onStart={(source: CaptureSource, quality: ScreenQuality) => {
-            const acao = picker === 'trocar' ? call.switchScreenSource : call.startScreenShare;
+            const modo = picker;
             setPicker(null);
-            void acao(source, quality);
+            if (modo === 'novo-dm') void directCall.startScreenShare(source, quality);
+            else if (modo === 'trocar') void call.switchScreenSource(source, quality);
+            else void call.startScreenShare(source, quality);
           }}
         />
       )}
@@ -805,8 +832,24 @@ export function AppPage({ profile }: { profile: Profile }) {
           servers={servers}
           presencaDe={presencaDe}
           onFriendsChanged={() => void carregarPendencias()}
+          onCall={(userKey, displayName, avatar) =>
+            void directCall.call(userKey, displayName, avatar)
+          }
         />
       )}
+
+      <DirectCallOverlay
+        state={directCall.state}
+        onAccept={() => void directCall.accept()}
+        onDecline={directCall.decline}
+        onHangUp={directCall.hangUp}
+        onToggleMute={directCall.toggleMute}
+        onToggleDeafen={directCall.toggleDeafen}
+        onStartScreenShare={() => setPicker('novo-dm')}
+        onStopScreenShare={() => void directCall.stopScreenShare()}
+        peerVolume={directCall.peerVolume()}
+        onPeerVolume={directCall.setPeerVolume}
+      />
 
       {/* Telas compartilhadas pelos peers: overlay flutuante no canto inferior direito */}
       <RequestsPopup

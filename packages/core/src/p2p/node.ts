@@ -454,6 +454,53 @@ export class P2PNode extends EventEmitter {
         this.emit('presence:update', this.presenceSnapshot());
         break;
       }
+
+      case 'call:invite': {
+        if (!peer.identityKey) break;
+        this.emit('call:invite', {
+          from: peer.identityKey,
+          callId: String(message.callId ?? ''),
+          displayName: String(message.displayName ?? '').slice(0, 64),
+          avatar: typeof message.avatar === 'string' ? message.avatar : null,
+        });
+        break;
+      }
+
+      case 'call:accept': {
+        if (!peer.identityKey) break;
+        this.emit('call:accept', { from: peer.identityKey, callId: String(message.callId ?? '') });
+        break;
+      }
+
+      case 'call:decline': {
+        if (!peer.identityKey) break;
+        this.emit('call:decline', { from: peer.identityKey, callId: String(message.callId ?? '') });
+        break;
+      }
+
+      case 'call:end': {
+        if (!peer.identityKey) break;
+        this.emit('call:end', { from: peer.identityKey, callId: String(message.callId ?? '') });
+        break;
+      }
+
+      case 'call:signal': {
+        // A identidade vem da prova, nunca do que a mensagem declara - mesma
+        // regra da sinalizacao de servidor.
+        if (!peer.identityKey) break;
+        if (typeof message.callId !== 'string' || typeof message.kind !== 'string') break;
+        this.emit('call:signal', {
+          from: peer.identityKey,
+          callId: message.callId,
+          signal: {
+            kind: message.kind,
+            from: peer.identityKey,
+            channelId: message.callId,
+            data: message.data,
+          } as VoiceSignal,
+        });
+        break;
+      }
     }
   }
 
@@ -476,6 +523,41 @@ export class P2PNode extends EventEmitter {
   broadcast(serverId: string, ops: Operation[]): void {
     if (ops.length === 0) return;
     for (const peer of this.peers.values()) this.sendOps(peer, serverId, ops);
+  }
+
+  // ---------- chamada direta ----------
+
+  /**
+   * Toca o telefone de outra pessoa, com ou sem servidor em comum.
+   *
+   * Usa o mesmo caminho do pedido de amizade: se ela nao estiver conectada
+   * agora, a mensagem espera na fila do topico pessoal dela ate aparecer.
+   */
+  callInvite(
+    targetKey: string,
+    callId: string,
+    displayName: string,
+    avatar: string | null,
+  ): Promise<'entregue' | 'na-fila'> {
+    return this.sendToUser(targetKey, { t: 'call:invite', callId, displayName, avatar });
+  }
+
+  async callRespond(targetKey: string, callId: string, accepted: boolean): Promise<void> {
+    await this.sendToUser(targetKey, { t: accepted ? 'call:accept' : 'call:decline', callId });
+  }
+
+  async callEnd(targetKey: string, callId: string): Promise<void> {
+    await this.sendToUser(targetKey, { t: 'call:end', callId });
+  }
+
+  /** Sinalizacao WebRTC de uma chamada direta - sem chave de servidor envolvida. */
+  callSignal(targetKey: string, signal: VoiceSignal): void {
+    void this.sendToUser(targetKey, {
+      t: 'call:signal',
+      callId: signal.channelId,
+      kind: signal.kind,
+      data: signal.data,
+    });
   }
 
   // ---------- presenca ----------

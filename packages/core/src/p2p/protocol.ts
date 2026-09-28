@@ -32,7 +32,27 @@ export type Message =
    */
   | { t: 'friend:request'; displayName: string; avatar: string | null }
   | { t: 'friend:response'; accepted: boolean; displayName: string }
-  | { t: 'invite:offer'; serverId: string; serverName: string; code: string };
+  | { t: 'invite:offer'; serverId: string; serverName: string; code: string }
+  /**
+   * Chamada direta entre duas pessoas, sem servidor em comum.
+   *
+   * Vai pelo mesmo topico pessoal dos pedidos de amizade e nao carrega
+   * nenhuma cifra propria: a conexao ja e direta entre os dois (Hyperswarm
+   * cifra o transporte) e a identidade ja foi provada antes de qualquer uma
+   * destas mensagens ser aceita. O `callId` sozinho basta para amarrar convite,
+   * sinalizacao WebRTC e encerramento ao mesmo par - nao ha servidor cuja
+   * chave possa cumprir esse papel aqui.
+   */
+  | { t: 'call:invite'; callId: string; displayName: string; avatar: string | null }
+  | { t: 'call:accept'; callId: string }
+  | { t: 'call:decline'; callId: string }
+  | { t: 'call:end'; callId: string }
+  | {
+      t: 'call:signal';
+      callId: string;
+      kind: 'join' | 'leave' | 'offer' | 'answer' | 'ice' | 'state';
+      data?: unknown;
+    };
 
 /** Texto assinado na prova de identidade, com rotulo de dominio. */
 export function authMessage(nonce: string): Uint8Array {

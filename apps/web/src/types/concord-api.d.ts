@@ -172,6 +172,13 @@ export interface ConcordApi {
     decline(serverId: string): Promise<boolean>;
   };
   onSocialEvent(handler: (evento: string, dados: any) => void): () => void;
+  calls: {
+    invite(targetKey: string, callId: string): Promise<'entregue' | 'na-fila'>;
+    respond(targetKey: string, callId: string, accepted: boolean): Promise<boolean>;
+    end(targetKey: string, callId: string): Promise<boolean>;
+    signal(targetKey: string, signal: unknown): Promise<boolean>;
+    onSignal(handler: (callId: string, signal: any) => void): () => void;
+  };
   overlay: {
     update(
       participants: {
@@ -225,6 +232,9 @@ export interface ConcordApi {
   };
   network: {
     status(): Promise<{ peers: number; online: boolean }>;
+  };
+  app: {
+    version(): Promise<string>;
   };
   onSyncUpdate(handler: (serverId: string) => void): () => void;
 }

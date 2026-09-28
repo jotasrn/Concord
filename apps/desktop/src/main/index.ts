@@ -44,6 +44,9 @@ function createSession(): SessionType {
   },
   (evento, dados) => {
     window?.webContents.send('social:event', evento, dados);
+  },
+  (callId, signal) => {
+    window?.webContents.send('call:incoming-signal', callId, signal);
   });
 }
 

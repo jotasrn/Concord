@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AudioSettingsPanel } from '../voice/AudioSettingsPanel';
 import { ProfilePanel } from '../profile/ProfilePanel';
 import { FriendsPanel } from '../friends/FriendsPanel';
@@ -22,6 +22,7 @@ export function SettingsModal({
   servers,
   presencaDe,
   onFriendsChanged,
+  onCall,
 }: {
   profile: Profile;
   status: SettableStatus;
@@ -30,8 +31,14 @@ export function SettingsModal({
   servers: ServerView[];
   presencaDe: (userKey: string) => PresenceStatus;
   onFriendsChanged: () => void;
+  onCall: (userKey: string, displayName: string, avatar: string | null) => void;
 }) {
   const [tab, setTab] = useState<'perfil' | 'amigos' | 'audio' | 'video' | 'recursos'>('perfil');
+  const [versao, setVersao] = useState<string | null>(null);
+
+  useEffect(() => {
+    void window.concord.app.version().then(setVersao).catch(() => undefined);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
@@ -56,6 +63,12 @@ export function SettingsModal({
           >
             Fechar
           </button>
+
+          {versao && (
+            <p className="px-3 pt-2 font-mono text-[10px] text-ink-400" title="Versao instalada">
+              Concord v{versao}
+            </p>
+          )}
         </nav>
 
         <div className="flex-1 overflow-y-auto p-6">
@@ -63,7 +76,15 @@ export function SettingsModal({
             <ProfilePanel profile={profile} status={status} onSaved={onProfileSaved} />
           )}
           {tab === 'amigos' && (
-            <FriendsPanel servers={servers} presencaDe={presencaDe} onChanged={onFriendsChanged} />
+            <FriendsPanel
+              servers={servers}
+              presencaDe={presencaDe}
+              onChanged={onFriendsChanged}
+              onCall={(userKey, displayName, avatar) => {
+                onClose();
+                onCall(userKey, displayName, avatar);
+              }}
+            />
           )}
           {tab === 'audio' && <AudioSettingsPanel />}
           {tab === 'video' && <VideoPanel />}

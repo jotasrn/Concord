@@ -1,140 +1,146 @@
 # Concord
 
-Plataforma de comunicacao para gamers: servidores, canais de texto e voz, chamadas de video e
-compartilhamento de tela via WebRTC.
+Comunicacao por voz, video e texto para gamers - **sem servidor**. Cada pessoa
+instala o app, cria a conta na propria maquina e os dados replicam direto
+entre os dispositivos de todo mundo (P2P via [Hyperswarm](https://github.com/holepunchto/hyperswarm)).
+Quem esteve offline puxa dos peers o que perdeu ao voltar.
 
-> **Status atual: Fase 1 concluida** (monorepo, NestJS, Prisma/PostgreSQL, Redis, Docker, React/Vite).
-> Autenticacao, servidores, chat e WebRTC entram nas fases seguintes — veja o [roadmap](#roadmap).
+Nao ha Docker, nao ha banco de dados central, nao ha conta perdida por causa
+de um servidor fora do ar - porque nao existe servidor. A troca e explicita:
+sem autoridade central para recuperar senha, arbitrar apelido duplicado ou
+apagar o historico de quem foi expulso. Detalhes da decisao em
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Stack
+## O que ja funciona
 
-| Camada         | Tecnologias                                                        |
-| -------------- | ------------------------------------------------------------------ |
-| Frontend       | React 18, TypeScript, Vite, Tailwind CSS, React Router, TanStack Query, Zustand, Lucide |
-| Backend        | NestJS 10, TypeScript, Socket.IO, Passport/JWT, argon2              |
-| Banco          | PostgreSQL 16 + Prisma ORM                                          |
-| Cache/Presence | Redis 7                                                             |
-| Tempo real     | Socket.IO (sinalizacao) + WebRTC (midia)                            |
-| NAT traversal  | coturn (STUN/TURN)                                                  |
+- **Servidores e canais** - texto e voz, com convite cifrado ponta a ponta
+- **Chat** - links clicaveis, edicao e apagar mensagem propria
+- **Voz** - AEC/NS/AGC, deteccao de fala por limiar relativo ao ruido, perfil
+  de latencia ultra-baixa (Opus a 10ms, jitter buffer zerado)
+- **Video e compartilhamento de tela** - codec AV1/VP9 quando disponivel,
+  pausa sem derrubar a chamada, picture-in-picture, tela cheia
+- **Chamada direta** - liga para um amigo especifico, sem precisar de um
+  servidor em comum
+- **Bolhas flutuantes** - overlay transparente sobre jogos mostrando quem
+  esta falando
+- **Moderacao** - cargos, silenciar e expulsar; aplicado do lado de quem
+  recebe, ja que nao ha autoridade central para impor nada
+- **Perfil** - foto, biografia, status (online/ausente/nao perturbe/invisivel),
+  apelido por servidor
+- **Configuracoes de recurso** - teto de memoria, nucleos de CPU, limite de
+  armazenamento
+- **Atualizacao automatica** - via GitHub Releases, nunca reinicia com
+  chamada em andamento (veja [docs/ATUALIZACAO.md](docs/ATUALIZACAO.md))
+- **Seguranca do executavel** - DevTools bloqueado em producao, sem
+  sourcemap, fuses do Electron (sem `RUN_AS_NODE`, integridade do asar)
 
-## Estrutura
+Pendente: transmissao de webcam durante a chamada (a captura ja existe nas
+configuracoes; falta ligar ao transporte).
+
+## Como funciona, em uma frase
+
+Toda mudanca que precisa sobreviver (mensagem, canal, membro, perfil) e uma
+**operacao assinada** que entra num log local; peers trocam o que um ainda
+nao tem. Estado que nao e operacao - status, quem esta em chamada, sinalizacao
+WebRTC - vive so na conexao e nunca precisa sobreviver a nada.
 
 ```
-apps/
-  api/        NestJS - REST + WebSocket gateways + Prisma
-  web/        React + Vite - SPA
-packages/
-  types/      Contratos compartilhados (entidades, eventos WS, envelope de API)
-  shared/     Utilitarios puros (bitmask de permissoes, constantes)
-  ui/         Design system (a partir da Fase 4)
-  config/     tsconfig base compartilhado
-infrastructure/
-  docker/     Dockerfiles + nginx
-  turn/       Configuracao do coturn
-docs/         ARCHITECTURE, DATABASE, API, WEBSOCKET, WEBRTC, SECURITY, DEPLOY
+apps/desktop/   Electron - processo principal (Node) + janela do overlay
+apps/web/       Interface (React) - roda dentro do Electron OU no navegador
+apps/server/    Ponte WebSocket opcional p/ acessar pelo navegador (ver abaixo)
+packages/core/  O nucleo: identidade, log assinado, SQLite, rede P2P
+packages/types/ Contratos TypeScript compartilhados
+docs/           Arquitetura, seguranca, atualizacao, deploy web
 ```
 
-## Como executar
+Descricao arquivo por arquivo em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Requisitos: **Node 20+** e **Docker Desktop**.
+## Rodar em desenvolvimento
 
-### 1. Variaveis de ambiente
-
-```bash
-cp .env.example .env
-```
-
-Gere segredos reais para `JWT_ACCESS_SECRET` e `JWT_REFRESH_SECRET`:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-### 2. Configurar o TURN
-
-```bash
-cp infrastructure/turn/turnserver.conf.example infrastructure/turn/turnserver.conf
-```
-
-Troque `CHANGE_ME` pela senha definida em `TURN_PASSWORD`. Detalhes em [docs/WEBRTC.md](docs/WEBRTC.md).
-
-### 3. Subir a infraestrutura
-
-```bash
-docker compose up -d
-```
-
-Isso sobe **postgres**, **redis** e **coturn**. As aplicacoes rodam localmente com hot reload
-(os servicos `api` e `web` do compose ficam no profile `full`, usado apenas para validar a imagem
-de producao: `docker compose --profile full up -d --build`).
-
-### 4. Instalar dependencias e migrar o banco
+Requisito: **Node 20+** (o CI usa Node 22).
 
 ```bash
 npm install
 ```
 
 ```bash
-npm run prisma:migrate --workspace=apps/api
+npm run dev
 ```
 
-### 5. Rodar em desenvolvimento
+Isso builda tudo e abre a janela do Electron com hot reload no processo
+principal. Uma conta e criada localmente na primeira execucao - so uma frase
+de recuperacao de 12 palavras, sem e-mail nem senha em servidor nenhum.
+
+Para testar P2P de verdade, repita a instalacao numa segunda maquina (ou numa
+segunda pasta de dados na mesma maquina) e gere um convite de servidor de um
+lado para o outro.
+
+## Gerar o instalador
 
 ```bash
-npm run dev:api
+npm run dist
 ```
 
-```bash
-npm run dev:web
-```
+Sai em `%LOCALAPPDATA%\Concord-build\release` (fora do repositorio de
+proposito - OneDrive trava o `asar` no meio do empacotamento). Produz um
+instalador NSIS e uma versao `.zip` sem instalacao.
 
-- API: <http://localhost:3333/api>
-- Swagger: <http://localhost:3333/api/docs>
-- Web: <http://localhost:5173>
+Publicar uma versao nova (dispara build + release automatico via GitHub
+Actions): veja [docs/ATUALIZACAO.md](docs/ATUALIZACAO.md).
 
-A rota `/status` do frontend consulta `GET /api/health` e mostra o estado real de PostgreSQL e Redis.
-A API sobe em **modo degradado** se o banco estiver fora, justamente para que essa tela consiga
-apontar qual dependencia falhou.
+## Cliente web (opcional)
+
+A interface tambem roda no navegador, falando com o nucleo P2P atraves de uma
+ponte WebSocket (`apps/server`) em vez de IPC do Electron - util para acessar
+de um dispositivo onde nao da para instalar o app. Captura de tela e o
+overlay de bolhas nao existem nesse modo (dependem de APIs do Electron).
+Deploy em [docs/DEPLOY_WEB.md](docs/DEPLOY_WEB.md).
 
 ## Scripts
 
-| Comando                                        | Efeito                                  |
-| ---------------------------------------------- | --------------------------------------- |
-| `npm run build`                                | Compila packages, API e web             |
-| `npm run dev:api` / `npm run dev:web`          | Dev server com watch                    |
-| `npm run test`                                 | Testes de todos os workspaces           |
-| `npm run prisma:migrate --workspace=apps/api`  | Cria/aplica migrations                  |
-| `npm run prisma:studio --workspace=apps/api`   | GUI do banco                            |
+| Comando | Efeito |
+| --- | --- |
+| `npm run dev` | Builda tudo e abre o Electron com hot reload |
+| `npm run build` | Compila todos os workspaces, na ordem de dependencia |
+| `npm test` | Roda os testes de todos os workspaces |
+| `npm run dist` | Gera o instalador local, sem publicar |
+| `npm run dist --workspace=apps/desktop` | Idem, direto no workspace |
 
-Os comandos Prisma usam `dotenv-cli` apontando para o `.env` da raiz, mantendo um unico arquivo de
-configuracao no monorepo.
+## Testes
+
+```bash
+npm test
+```
+
+75 testes no `packages/core`: convergencia entre peers, assinatura e
+verificacao de operacoes, sincronizacao apos ficar offline, protocolo de
+enquadramento e um conjunto adversarial (payload nulo, tipo errado, mensagem
+gigante, uma operacao invalida que nao pode derrubar as demais).
 
 ## Documentacao
 
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — decisoes de arquitetura e topologia de midia
-- [DATABASE.md](docs/DATABASE.md) — modelo de dados e indices
-- [WEBRTC.md](docs/WEBRTC.md) — fluxo de sinalizacao, STUN/TURN
-- [WEBSOCKET.md](docs/WEBSOCKET.md) — gateways e eventos
-- [SECURITY.md](docs/SECURITY.md) — autenticacao, permissoes e rate limiting
-- [API.md](docs/API.md) — superficie REST
-- [DEPLOY.md](docs/DEPLOY.md) — producao
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - os tres processos, o log
+  assinado, arquivo por arquivo do que existe
+- [SECURITY.md](docs/SECURITY.md) - identidade, cifragem, moderacao,
+  seguranca do executavel
+- [ATUALIZACAO.md](docs/ATUALIZACAO.md) - como o auto-update funciona e como
+  publicar uma versao
+- [DEPLOY_WEB.md](docs/DEPLOY_WEB.md) - rodar a ponte WebSocket para acesso
+  pelo navegador
+- [WEBRTC.md](docs/WEBRTC.md) - sinalizacao, perfis de latencia, codecs
 
-## Roadmap
+## Limitacoes conhecidas
 
-| Fase | Escopo                                        | Status     |
-| ---- | --------------------------------------------- | ---------- |
-| 1    | Monorepo, NestJS, Prisma, Redis, Docker, React | Concluida  |
-| 2    | Autenticacao (registro, login, JWT, perfil)    | Proxima    |
-| 3    | Servidores/comunidades                        | Pendente   |
-| 4    | Canais e categorias                           | Pendente   |
-| 5    | Chat em tempo real                            | Pendente   |
-| 6    | Presence                                      | Pendente   |
-| 7    | Voz (WebRTC)                                  | Pendente   |
-| 8    | Video                                         | Pendente   |
-| 9    | Compartilhamento de tela                      | Pendente   |
-| 10   | TURN em producao                              | Pendente   |
-| 11   | Amigos e DMs                                  | Pendente   |
-| 12   | Endurecimento de seguranca                    | Pendente   |
-| 13   | Testes                                        | Pendente   |
-| 14   | Performance                                   | Pendente   |
-| 15   | Deploy                                        | Pendente   |
+Consequencia direta de nao haver servidor:
+
+- **Sem recuperacao de senha.** A frase de 12 palavras E a conta. Perdeu as
+  duas, perdeu o acesso.
+- **Sem nomes de usuario unicos.** Duas pessoas podem escolher o mesmo nome;
+  quem te conhece te identifica pela chave publica, nao pelo nome.
+- **Moderacao nao e absoluta.** Expulsar impede novas mensagens da pessoa, mas
+  o historico que ela ja baixou continua no computador dela - nao ha como
+  apagar remotamente.
+- **Sem TURN.** Funciona atras da maioria dos NATs por STUN publico; NAT
+  simetrico dos dois lados ao mesmo tempo pode falhar em conectar.
+- **Sem assinatura digital do instalador.** O Windows SmartScreen avisa na
+  primeira instalacao ate haver um certificado de code signing.

@@ -30,6 +30,8 @@ export class Session {
       snapshot: Record<string, { status: string; voice: string | null }>,
     ) => void = () => {},
     private readonly onSocial: (evento: string, dados: unknown) => void = () => {},
+    /** Sinalizacao WebRTC de uma chamada direta (sem servidor envolvido). */
+    private readonly onCallSignal: (callId: string, signal: unknown) => void = () => {},
   ) {
     if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
   }
@@ -124,6 +126,27 @@ export class Session {
       });
       this.onSocial('invite:offer', r);
     });
+
+    // Chamada direta: os quatro eventos de controle vao para o mesmo canal
+    // social que ja alimenta os popups de amizade e convite - a interface so
+    // precisa ouvir um lugar so. A sinalizacao WebRTC (muito mais frequente)
+    // tem um canal proprio, no mesmo padrao do voice:signal de servidor.
+    this.node.on('call:invite', (r: { from: string; callId: string; displayName: string; avatar: string | null }) =>
+      this.onSocial('call:invite', r),
+    );
+    this.node.on('call:accept', (r: { from: string; callId: string }) =>
+      this.onSocial('call:accept', r),
+    );
+    this.node.on('call:decline', (r: { from: string; callId: string }) =>
+      this.onSocial('call:decline', r),
+    );
+    this.node.on('call:end', (r: { from: string; callId: string }) =>
+      this.onSocial('call:end', r),
+    );
+    this.node.on('call:signal', ({ callId, signal }: { callId: string; signal: unknown }) =>
+      this.onCallSignal(callId, signal),
+    );
+
     await this.node.start();
 
     return identity;
@@ -298,6 +321,34 @@ export class Session {
 
   declineServerInvite(serverId: string): void {
     this.requireStore().social.removePendingInvite(serverId);
+  }
+
+  // ---------- chamada direta ----------
+
+  async callInvite(
+    targetKey: string,
+    callId: string,
+  ): Promise<'entregue' | 'na-fila'> {
+    const store = this.requireStore();
+    const perfil = store.profileOf(store.publicKeyHex);
+    return this.requireNode().callInvite(
+      targetKey,
+      callId,
+      perfil?.displayName ?? store.identity.displayName,
+      perfil?.avatar ?? null,
+    );
+  }
+
+  async callRespond(targetKey: string, callId: string, accepted: boolean): Promise<void> {
+    await this.requireNode().callRespond(targetKey, callId, accepted);
+  }
+
+  async callEnd(targetKey: string, callId: string): Promise<void> {
+    await this.requireNode().callEnd(targetKey, callId);
+  }
+
+  sendCallSignal(targetKey: string, signal: any): void {
+    this.requireNode().callSignal(targetKey, signal);
   }
 
   storageUsage() {

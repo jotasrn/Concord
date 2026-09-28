@@ -5,7 +5,6 @@ import {
   Gauge,
   Headphones,
   HeadphoneOff,
-  Maximize2,
   Mic,
   MicOff,
   Monitor,
@@ -13,31 +12,33 @@ import {
   Pause,
   PhoneOff,
   Pin,
+  PinOff,
   Play,
   Repeat,
   Signal,
-  Volume2,
   VolumeX,
 } from 'lucide-react';
 import { Avatar } from '../../components/ui';
 import { CallState } from './useVoiceCall';
 import { formatDuration, useCallDuration } from './useCallDuration';
+import { ParticipantMenu, ParticipantMenuButton, ParticipantMenuTarget } from './ParticipantMenu';
 
 /** Um quadro da grade: uma pessoa, com ou sem tela compartilhada. */
 interface Tile {
   key: string;
   name: string;
+  avatar: string | null;
   isSelf: boolean;
   stream: MediaStream | null;
   speaking: boolean;
   muted: boolean;
+  localMuted: boolean;
   sharing: boolean;
   paused: boolean;
   connection: RTCPeerConnectionState | null;
   latencyMs: number | null;
   quality: string | null;
-  /** Volume aplicado a esta pessoa. 1 = original. Nulo no proprio quadro. */
-  volume: number | null;
+  pinned: boolean;
 }
 
 const CORES_QUALIDADE: Record<string, string> = {
@@ -86,64 +87,30 @@ function Video({ stream, mirrored }: { stream: MediaStream; mirrored?: boolean }
   );
 }
 
-/**
- * Controle de volume de uma pessoa.
- *
- * Vai ate 200% porque o problema real e o contrario do esperado: quem fala
- * baixo ou tem microfone ruim fica inaudivel, e atenuar nao resolve isso. Acima
- * de 100% o audio passa por um ganho do Web Audio, entao o valor fica salvo por
- * pessoa e volta igual na proxima chamada.
- */
-function VolumeControl({ volume, onChange }: { volume: number; onChange: (v: number) => void }) {
-  return (
-    <div
-      onClick={(e) => e.stopPropagation()}
-      className="flex items-center gap-1.5 opacity-0 transition group-hover:opacity-100"
-      title={`Volume: ${Math.round(volume * 100)}%`}
-    >
-      {volume === 0 ? (
-        <VolumeX className="h-3.5 w-3.5 shrink-0 text-status-dnd" />
-      ) : (
-        <Volume2
-          className={`h-3.5 w-3.5 shrink-0 ${volume > 1 ? 'text-violet-400' : 'text-ink-300'}`}
-        />
-      )}
-      <input
-        type="range"
-        min={0}
-        max={200}
-        step={5}
-        value={Math.round(volume * 100)}
-        onChange={(e) => onChange(Number(e.target.value) / 100)}
-        // Duplo clique volta ao original: mais rapido que acertar 100 no arraste.
-        onDoubleClick={() => onChange(1)}
-        aria-label="Volume desta pessoa"
-        className="h-1 w-16 cursor-pointer accent-violet-500"
-      />
-      <span className="w-8 shrink-0 font-mono text-[10px] text-ink-300">
-        {Math.round(volume * 100)}%
-      </span>
-    </div>
-  );
-}
-
 function TileCard({
   tile,
-  onFocus,
-  focused,
-  onVolume,
+  onTogglePin,
+  onOpenMenu,
 }: {
   tile: Tile;
-  onFocus: () => void;
-  focused: boolean;
-  onVolume: (volume: number) => void;
+  onTogglePin: () => void;
+  onOpenMenu: (anchor: { x: number; y: number }) => void;
 }) {
   return (
     <div
-      onClick={tile.stream ? onFocus : undefined}
-      className={`group relative overflow-hidden rounded-xl border bg-void-900 transition ${
-        tile.speaking ? 'border-status-online shadow-glow' : 'border-void-700'
-      } ${tile.stream ? 'cursor-pointer' : ''}`}
+      onClick={onTogglePin}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onOpenMenu({ x: e.clientX, y: e.clientY });
+      }}
+      title="Clique para fixar no palco - clique com o botao direito para mais opcoes"
+      className={`group relative cursor-pointer overflow-hidden rounded-xl border bg-void-900 transition ${
+        tile.speaking
+          ? 'border-status-online shadow-glow'
+          : tile.pinned
+            ? 'border-violet-500'
+            : 'border-void-700'
+      }`}
     >
       {tile.stream ? (
         <div className="aspect-video">
@@ -152,7 +119,7 @@ function TileCard({
       ) : (
         <div className="flex aspect-video items-center justify-center bg-void-850">
           <div className="relative">
-            <Avatar name={tile.name} userKey={tile.key} size={72} />
+            <Avatar name={tile.name} userKey={tile.key} src={tile.avatar} size={72} />
             {tile.speaking && (
               <span className="absolute -inset-1 animate-pulse-ring rounded-full ring-4 ring-status-online" />
             )}
@@ -175,8 +142,16 @@ function TileCard({
             <Monitor className="h-3.5 w-3.5" />
           </span>
         )}
-        {tile.muted && <MicOff className="h-3.5 w-3.5 text-status-dnd" />}
-        {tile.volume !== null && <VolumeControl volume={tile.volume} onChange={onVolume} />}
+        {tile.localMuted && (
+          <span title="Voce silenciou esta pessoa">
+            <VolumeX className="h-3.5 w-3.5 text-ink-400" />
+          </span>
+        )}
+        {tile.muted && (
+          <span title="Silenciado pela moderacao do servidor">
+            <MicOff className="h-3.5 w-3.5 text-status-dnd" />
+          </span>
+        )}
         {tile.latencyMs !== null && (
           <span
             title="Atraso medido de ponta a ponta"
@@ -190,19 +165,16 @@ function TileCard({
             <Signal className="h-3.5 w-3.5" />
           </span>
         )}
+        <ParticipantMenuButton onOpen={onOpenMenu} />
       </div>
 
-      {tile.stream && !focused && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onFocus();
-          }}
-          title="Destacar"
-          className="absolute right-2 top-2 rounded bg-black/70 p-1.5 text-ink-200 opacity-0 transition group-hover:opacity-100 hover:text-violet-300"
+      {tile.pinned && (
+        <span
+          title="Fixado no palco"
+          className="absolute right-2 top-2 rounded bg-violet-600/90 p-1 text-white"
         >
-          <Maximize2 className="h-3.5 w-3.5" />
-        </button>
+          <Pin className="h-3 w-3" />
+        </span>
       )}
 
       {tile.connection && tile.connection !== 'connected' && (
@@ -217,15 +189,25 @@ function TileCard({
 /**
  * Palco da chamada: grade com todos os participantes e a tela de quem esta
  * transmitindo, incluindo o preview da propria transmissao.
+ *
+ * Quem esta fixado (clique no quadro, ou pelo menu de acoes) ocupa a area
+ * principal; os demais ficam numa fita rolavel embaixo - o mesmo padrao do
+ * Zoom e do Meet para destacar uma pessoa sem perder os outros de vista.
  */
 export function CallStage({
   state,
   selfName,
   selfKey,
+  selfAvatar,
   remoteScreens,
   peersPausados,
   peerVolumes,
   onPeerVolume,
+  localMutedKeys,
+  onToggleLocalMute,
+  pinned,
+  onTogglePin,
+  onOpenProfile,
   onLeave,
   onToggleMute,
   onToggleDeafen,
@@ -238,10 +220,16 @@ export function CallStage({
   state: CallState;
   selfName: string;
   selfKey: string;
+  selfAvatar: string | null;
   remoteScreens: Map<string, MediaStream>;
   peersPausados: Record<string, boolean>;
   peerVolumes: Record<string, number>;
   onPeerVolume: (peerKey: string, volume: number) => void;
+  localMutedKeys: Set<string>;
+  onToggleLocalMute: (peerKey: string) => void;
+  pinned: string | null;
+  onTogglePin: (peerKey: string) => void;
+  onOpenProfile: (peerKey: string) => void;
   onLeave: () => void;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
@@ -251,51 +239,71 @@ export function CallStage({
   onSwitchSource: () => void;
   onReconnect: () => void;
 }) {
-  const [focado, setFocado] = useState<string | null>(null);
   const duracao = useCallDuration(state.joinedAt);
+  const [menuAlvo, setMenuAlvo] = useState<ParticipantMenuTarget | null>(null);
 
   const tiles = useMemo<Tile[]>(() => {
     const proprio: Tile = {
       key: selfKey,
       name: selfName,
+      avatar: selfAvatar,
       isSelf: true,
       stream: state.localScreen,
       speaking: Boolean(state.audio?.transmitting) && !state.muted,
       muted: state.muted,
+      localMuted: false,
       sharing: state.screenSharing,
       paused: state.screenPaused,
       connection: null,
       latencyMs: null,
       quality: null,
-      // Nao existe volume do proprio audio: ele nunca e reproduzido aqui.
-      volume: null,
+      pinned: pinned === selfKey,
     };
 
     const outros: Tile[] = state.participants.map((p) => ({
       key: p.key,
       name: p.name,
+      avatar: null,
       isSelf: false,
       stream: remoteScreens.get(p.key) ?? null,
-      speaking: false,
-      muted: false,
+      speaking: p.speaking,
+      muted: p.muted,
+      localMuted: localMutedKeys.has(p.key),
       sharing: remoteScreens.has(p.key),
       paused: Boolean(peersPausados[p.key]),
       connection: p.connection,
       latencyMs: p.latency?.totalMs ?? null,
       quality: p.stats?.quality ?? null,
-      volume: peerVolumes[p.key] ?? 1,
+      pinned: pinned === p.key,
     }));
 
     return [proprio, ...outros];
-  }, [state, selfKey, selfName, remoteScreens, peerVolumes, peersPausados]);
+  }, [
+    state,
+    selfKey,
+    selfName,
+    selfAvatar,
+    remoteScreens,
+    peersPausados,
+    localMutedKeys,
+    pinned,
+  ]);
 
-  // Se quem estava em destaque parou de transmitir, volta para a grade.
-  useEffect(() => {
-    if (focado && !tiles.some((t) => t.key === focado && t.stream)) setFocado(null);
-  }, [tiles, focado]);
-
-  const emDestaque = focado ? tiles.find((t) => t.key === focado) : null;
+  const emDestaque = pinned ? tiles.find((t) => t.key === pinned) : null;
   const secundarios = emDestaque ? tiles.filter((t) => t.key !== emDestaque.key) : [];
+
+  const abrirMenu = (tile: Tile, anchor: { x: number; y: number }) => {
+    setMenuAlvo({
+      key: tile.key,
+      name: tile.name,
+      avatar: tile.avatar,
+      isSelf: tile.isSelf,
+      pinned: tile.pinned,
+      localMuted: tile.localMuted,
+      volume: peerVolumes[tile.key] ?? 1,
+      anchor,
+    });
+  };
 
   return (
     <div className="flex h-full flex-col bg-void-950">
@@ -340,18 +348,34 @@ export function CallStage({
         {emDestaque ? (
           <div className="flex h-full flex-col gap-3">
             <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-violet-800/50 bg-black">
-              {emDestaque.stream && <Video stream={emDestaque.stream} />}
+              {emDestaque.stream ? (
+                <Video stream={emDestaque.stream} />
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <div className="relative">
+                    <Avatar
+                      name={emDestaque.name}
+                      userKey={emDestaque.key}
+                      src={emDestaque.avatar}
+                      size={120}
+                    />
+                    {emDestaque.speaking && (
+                      <span className="absolute -inset-2 animate-pulse-ring rounded-full ring-4 ring-status-online" />
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/90 to-transparent px-3 py-2">
                 <span className="flex-1 text-xs font-semibold text-ink-100">
                   {emDestaque.name}
-                  {emDestaque.isSelf && <span className="ml-1 text-ink-400">(sua tela)</span>}
+                  {emDestaque.isSelf && <span className="ml-1 text-ink-400">(voce)</span>}
                 </span>
                 <button
-                  onClick={() => setFocado(null)}
-                  title="Voltar para a grade"
+                  onClick={() => onTogglePin(emDestaque.key)}
+                  title="Desafixar do palco"
                   className="rounded bg-black/60 p-1.5 text-ink-200 hover:text-violet-300"
                 >
-                  <Pin className="h-3.5 w-3.5" />
+                  <PinOff className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
@@ -362,9 +386,8 @@ export function CallStage({
                   <div key={tile.key} className="w-44 shrink-0">
                     <TileCard
                       tile={tile}
-                      focused={false}
-                      onFocus={() => setFocado(tile.key)}
-                      onVolume={(v) => onPeerVolume(tile.key, v)}
+                      onTogglePin={() => onTogglePin(tile.key)}
+                      onOpenMenu={(anchor) => abrirMenu(tile, anchor)}
                     />
                   </div>
                 ))}
@@ -377,9 +400,8 @@ export function CallStage({
               <TileCard
                 key={tile.key}
                 tile={tile}
-                focused={false}
-                onFocus={() => setFocado(tile.key)}
-                onVolume={(v) => onPeerVolume(tile.key, v)}
+                onTogglePin={() => onTogglePin(tile.key)}
+                onOpenMenu={(anchor) => abrirMenu(tile, anchor)}
               />
             ))}
           </div>
@@ -471,6 +493,29 @@ export function CallStage({
           <PhoneOff className="h-5 w-5" />
         </button>
       </footer>
+
+      {menuAlvo && (
+        <ParticipantMenu
+          target={menuAlvo}
+          onClose={() => setMenuAlvo(null)}
+          onTogglePin={() => {
+            onTogglePin(menuAlvo.key);
+            setMenuAlvo(null);
+          }}
+          onToggleLocalMute={() => {
+            onToggleLocalMute(menuAlvo.key);
+            setMenuAlvo((atual) => (atual ? { ...atual, localMuted: !atual.localMuted } : atual));
+          }}
+          onVolumeChange={(v) => {
+            onPeerVolume(menuAlvo.key, v);
+            setMenuAlvo((atual) => (atual ? { ...atual, volume: v } : atual));
+          }}
+          onOpenProfile={() => {
+            onOpenProfile(menuAlvo.key);
+            setMenuAlvo(null);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -108,13 +108,22 @@ export function AppPage({ profile }: { profile: Profile }) {
    * o estado real da rede - nao ha registro no log dizendo quem esta em call.
    */
   const ocupantesDe = (channelId: string) => {
+    // So existe leitura real de "quem fala" para quem esta no MESMO canal que
+    // nos: e so ai que ha uma RTCPeerConnection direta medindo o audio. Para
+    // qualquer outro canal ninguem tem como saber, e speaking fica false -
+    // honesto em vez de fingir.
+    const falandoPorChave =
+      call.state.channelId === channelId
+        ? new Map(call.state.participants.map((p) => [p.key, p.speaking]))
+        : new Map<string, boolean>();
+
     const dentro = members
       .filter((m) => presencas[m.userKey]?.voice === channelId)
       .map((m) => ({
         userKey: m.userKey,
         name: m.displayName || m.userKey.slice(0, 8),
         avatar: m.avatar,
-        speaking: false,
+        speaking: falandoPorChave.get(m.userKey) ?? false,
       }));
 
     // O proprio usuario nao vem pela rede: entra a partir do estado local.
@@ -509,6 +518,13 @@ export function AppPage({ profile }: { profile: Profile }) {
           selfName={profile.displayName}
           selfKey={profile.publicKey}
           remoteScreens={call.remoteScreens}
+          peerVolumes={call.peerVolumes}
+          onPeerVolume={call.setPeerVolume}
+          localMutedKeys={call.localMutedKeys}
+          onToggleLocalMute={call.toggleLocalMute}
+          pinned={call.pinned}
+          onTogglePin={call.togglePin}
+          onOpenProfile={(peerKey) => setMembroAberto(peerKey)}
           onLeave={() => void call.leave()}
           onToggleMute={call.toggleMute}
           onToggleDeafen={call.toggleDeafen}
@@ -571,10 +587,16 @@ export function AppPage({ profile }: { profile: Profile }) {
             state={call.state}
             selfName={profile.displayName}
             selfKey={profile.publicKey}
+            selfAvatar={meuAvatar}
             remoteScreens={call.remoteScreens}
             peersPausados={call.peersPausados}
             peerVolumes={call.peerVolumes}
             onPeerVolume={call.setPeerVolume}
+            localMutedKeys={call.localMutedKeys}
+            onToggleLocalMute={call.toggleLocalMute}
+            pinned={call.pinned}
+            onTogglePin={call.togglePin}
+            onOpenProfile={(peerKey) => setMembroAberto(peerKey)}
             onLeave={() => {
               void call.leave();
               setAba('chat');
@@ -684,6 +706,12 @@ export function AppPage({ profile }: { profile: Profile }) {
             })
             .map((m) => {
               const presenca = presencaDe(m.userKey);
+              const canalDeVoz = presencas[m.userKey]?.voice ?? null;
+              // So temos leitura de audio real de quem esta no MESMO canal
+              // que nos - mesma logica de ocupantesDe.
+              const falandoAgora =
+                call.state.channelId === canalDeVoz &&
+                call.state.participants.some((p) => p.key === m.userKey && p.speaking);
               return (
                 <button
                   key={m.userKey}
@@ -693,13 +721,18 @@ export function AppPage({ profile }: { profile: Profile }) {
                     presenca === 'OFFLINE' ? 'opacity-45' : ''
                   }`}
                 >
-                  <Avatar
-                    name={m.displayName}
-                    userKey={m.userKey}
-                    src={m.avatar}
-                    size={28}
-                    status={presenca}
-                  />
+                  <div className="relative shrink-0">
+                    <Avatar
+                      name={m.displayName}
+                      userKey={m.userKey}
+                      src={m.avatar}
+                      size={28}
+                      status={presenca}
+                    />
+                    {falandoAgora && (
+                      <span className="absolute -inset-0.5 rounded-full ring-2 ring-status-online animate-pulse-ring" />
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-ink-200">
                       {m.displayName || m.userKey.slice(0, 8)}
@@ -713,6 +746,11 @@ export function AppPage({ profile }: { profile: Profile }) {
                       m.bio && <p className="truncate text-[10px] text-ink-400">{m.bio}</p>
                     )}
                   </div>
+                  {canalDeVoz && (
+                    <span title="Em uma chamada de voz">
+                      <Volume2 className="h-3 w-3 shrink-0 text-violet-400" />
+                    </span>
+                  )}
                   {m.muted && (
                     <span title="Silenciado no servidor">
                       <MicOff className="h-3 w-3 shrink-0 text-status-dnd" />

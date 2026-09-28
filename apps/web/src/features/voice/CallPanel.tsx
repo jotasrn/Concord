@@ -1,8 +1,22 @@
-import { Headphones, HeadphoneOff, Mic, MicOff, Monitor, MonitorOff, PhoneOff, Signal, Volume2 } from 'lucide-react';
+import { useState } from 'react';
+import {
+  Headphones,
+  HeadphoneOff,
+  Mic,
+  MicOff,
+  Monitor,
+  MonitorOff,
+  PhoneOff,
+  Pin,
+  Signal,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { Avatar } from '../../components/ui';
 import { CallState } from './useVoiceCall';
 import { formatDuration, useCallDuration } from './useCallDuration';
 import { ShareControls } from '../screenshare/ShareControls';
+import { ParticipantMenu, ParticipantMenuTarget } from './ParticipantMenu';
 
 const CORES_QUALIDADE: Record<string, string> = {
   excelente: 'text-status-online',
@@ -17,6 +31,13 @@ export function CallPanel({
   selfName,
   selfKey,
   remoteScreens,
+  peerVolumes,
+  onPeerVolume,
+  localMutedKeys,
+  onToggleLocalMute,
+  pinned,
+  onTogglePin,
+  onOpenProfile,
   onLeave,
   onToggleMute,
   onToggleDeafen,
@@ -29,6 +50,13 @@ export function CallPanel({
   selfName: string;
   selfKey: string;
   remoteScreens: Map<string, MediaStream>;
+  peerVolumes: Record<string, number>;
+  onPeerVolume: (peerKey: string, volume: number) => void;
+  localMutedKeys: Set<string>;
+  onToggleLocalMute: (peerKey: string) => void;
+  pinned: string | null;
+  onTogglePin: (peerKey: string) => void;
+  onOpenProfile: (peerKey: string) => void;
   onLeave: () => void;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
@@ -37,9 +65,10 @@ export function CallPanel({
   onTogglePause: () => void;
   onSwitchSource: () => void;
 }) {
-  // Hook antes de qualquer return condicional, senao a contagem de hooks muda
-  // quando a chamada termina.
+  // Hooks antes de qualquer return condicional, senao a contagem de hooks
+  // muda quando a chamada termina.
   const duracao = useCallDuration(state.joinedAt);
+  const [menuAlvo, setMenuAlvo] = useState<ParticipantMenuTarget | null>(null);
   if (!state.channelId) return null;
 
   const falando = state.audio?.transmitting && !state.muted;
@@ -72,9 +101,9 @@ export function CallPanel({
         </p>
       )}
 
-      <div className="mb-2 space-y-1">
+      <div className="mb-2 space-y-0.5">
         {/* Voce */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded px-1 py-1">
           <div className="relative">
             <Avatar name={selfName} userKey={selfKey} size={26} />
             {falando && (
@@ -82,6 +111,7 @@ export function CallPanel({
             )}
           </div>
           <span className="flex-1 truncate text-xs text-ink-200">{selfName}</span>
+          {pinned === selfKey && <Pin className="h-3 w-3 text-violet-400" />}
           {state.screenSharing && (
             <span title="Compartilhando tela">
               <Monitor className="h-3 w-3 text-violet-400" />
@@ -90,14 +120,46 @@ export function CallPanel({
           {state.muted && <MicOff className="h-3 w-3 text-status-dnd" />}
         </div>
 
-        {/* Peers */}
+        {/* Peers - clicaveis, com as mesmas acoes rapidas do palco. */}
         {state.participants.map((p) => (
-          <div key={p.key} className="flex items-center gap-2">
-            <Avatar name={p.name} userKey={p.key} size={26} />
+          <button
+            key={p.key}
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              setMenuAlvo({
+                key: p.key,
+                name: p.name,
+                avatar: null,
+                isSelf: false,
+                pinned: pinned === p.key,
+                localMuted: localMutedKeys.has(p.key),
+                volume: peerVolumes[p.key] ?? 1,
+                anchor: { x: rect.right + 4, y: rect.top },
+              });
+            }}
+            className="flex w-full items-center gap-2 rounded px-1 py-1 text-left transition hover:bg-void-700/60"
+          >
+            <div className="relative shrink-0">
+              <Avatar name={p.name} userKey={p.key} size={26} />
+              {p.speaking && (
+                <span className="absolute -inset-0.5 rounded-full ring-2 ring-status-online animate-pulse-ring" />
+              )}
+            </div>
             <span className="flex-1 truncate text-xs text-ink-200">{p.name}</span>
+            {pinned === p.key && <Pin className="h-3 w-3 shrink-0 text-violet-400" />}
             {remoteScreens.has(p.key) && (
               <span title="Compartilhando tela">
-                <Monitor className="h-3 w-3 text-violet-400" />
+                <Monitor className="h-3 w-3 shrink-0 text-violet-400" />
+              </span>
+            )}
+            {localMutedKeys.has(p.key) && (
+              <span title="Voce silenciou esta pessoa">
+                <VolumeX className="h-3 w-3 shrink-0 text-ink-400" />
+              </span>
+            )}
+            {p.muted && (
+              <span title="Silenciado pela moderacao">
+                <MicOff className="h-3 w-3 shrink-0 text-status-dnd" />
               </span>
             )}
             {p.stats && (
@@ -115,19 +177,19 @@ export function CallPanel({
                 ]
                   .filter(Boolean)
                   .join(' | ')}
-                className={CORES_QUALIDADE[p.stats.quality]}
+                className={`shrink-0 ${CORES_QUALIDADE[p.stats.quality]}`}
               >
                 <Signal className="h-3 w-3" />
               </span>
             )}
             {p.connection !== 'connected' && (
-              <span className="text-[9px] text-ink-400">{p.connection}</span>
+              <span className="shrink-0 text-[9px] text-ink-400">{p.connection}</span>
             )}
-          </div>
+          </button>
         ))}
 
         {state.participants.length === 0 && !state.connecting && (
-          <p className="text-[11px] text-ink-400">Sozinho no canal.</p>
+          <p className="px-1 text-[11px] text-ink-400">Sozinho no canal.</p>
         )}
       </div>
 
@@ -193,6 +255,29 @@ export function CallPanel({
           paused={state.screenPaused}
           onTogglePause={onTogglePause}
           onSwitchSource={onSwitchSource}
+        />
+      )}
+
+      {menuAlvo && (
+        <ParticipantMenu
+          target={menuAlvo}
+          onClose={() => setMenuAlvo(null)}
+          onTogglePin={() => {
+            onTogglePin(menuAlvo.key);
+            setMenuAlvo(null);
+          }}
+          onToggleLocalMute={() => {
+            onToggleLocalMute(menuAlvo.key);
+            setMenuAlvo((atual) => (atual ? { ...atual, localMuted: !atual.localMuted } : atual));
+          }}
+          onVolumeChange={(v) => {
+            onPeerVolume(menuAlvo.key, v);
+            setMenuAlvo((atual) => (atual ? { ...atual, volume: v } : atual));
+          }}
+          onOpenProfile={() => {
+            onOpenProfile(menuAlvo.key);
+            setMenuAlvo(null);
+          }}
         />
       )}
     </section>

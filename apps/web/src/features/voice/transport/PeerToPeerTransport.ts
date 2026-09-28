@@ -721,6 +721,42 @@ export class PeerToPeerTransport implements VoiceTransport {
     this.systemAudioTrack = null;
   }
 
+  /**
+   * Nivel de audio que chega de cada peer, de 0 a 1.
+   *
+   * Vem de getSynchronizationSources(), que o proprio WebRTC preenche a partir
+   * do cabecalho RTP de nivel de audio - o mesmo dado que o outro lado ja
+   * calculou ao codificar. Sai de graca.
+   *
+   * A alternativa seria ligar um AnalyserNode do Web Audio em cada stream
+   * remoto: custaria um no de processamento por pessoa e ainda mediria depois
+   * do jitter buffer. Aqui nao ha nada disso.
+   *
+   * Usa o PRIMEIRO receptor de audio de proposito: ele corresponde a m-line 0,
+   * que e sempre o microfone. Os demais sao audio do sistema de quem transmite
+   * tela, e um jogo alto nao deve acender o anel de "esta falando".
+   */
+  audioLevels(): Map<string, number> {
+    const niveis = new Map<string, number>();
+
+    for (const [key, entry] of this.peers) {
+      const receiver = entry.pc.getReceivers().find((r) => r.track?.kind === 'audio');
+      if (!receiver || typeof receiver.getSynchronizationSources !== 'function') continue;
+
+      let maior = 0;
+      for (const fonte of receiver.getSynchronizationSources()) {
+        // audioLevel e opcional: ausente quando o outro lado nao negociou a
+        // extensao de cabecalho audio-level.
+        if (typeof fonte.audioLevel === 'number' && fonte.audioLevel > maior) {
+          maior = fonte.audioLevel;
+        }
+      }
+      niveis.set(key, maior);
+    }
+
+    return niveis;
+  }
+
   /** Metricas de video do que ESTAMOS enviando, para o painel de diagnostico. */
   async getOutboundVideoStats(): Promise<ScreenStats | null> {
     const entry = [...this.peers.values()][0];

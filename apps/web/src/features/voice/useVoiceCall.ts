@@ -14,6 +14,8 @@ export interface CallParticipant {
   connection: RTCPeerConnectionState;
   stats: VoiceStats | null;
   latency: LatencyBreakdown | null;
+  speaking: boolean;
+  muted: boolean;
 }
 
 export interface CallState {
@@ -93,6 +95,10 @@ export function useVoiceCall(
   const [peerVolumes, setPeerVolumes] = useState<Record<string, number>>({});
   /** Quem congelou a propria transmissao, para a imagem parada ter explicacao. */
   const [peersPausados, setPeersPausados] = useState<Record<string, boolean>>({});
+  /** Silenciados so para mim - preferencia pessoal, nao punicao. */
+  const [localMutedKeys, setLocalMutedKeys] = useState<Set<string>>(new Set());
+  /** Participante fixado no palco. Um so por vez, como no Discord. */
+  const [pinned, setPinned] = useState<string | null>(null);
   const screenRef = useRef(new ScreenShareEngine());
   const serverIdRef = useRef(serverId);
   serverIdRef.current = serverId;
@@ -117,6 +123,8 @@ export function useVoiceCall(
           connection: anterior?.connection ?? 'new',
           stats: anterior?.stats ?? null,
           latency: anterior?.latency ?? null,
+          speaking: anterior?.speaking ?? false,
+          muted: anterior?.muted ?? mutedRef.current.has(key),
         };
       }),
     }));
@@ -129,7 +137,7 @@ export function useVoiceCall(
     const mixer = mixerRef.current;
     mixer.attach(peerKey, stream);
     // Silenciado pela moderacao nao toca, mesmo que continue enviando.
-    mixer.setMuted(peerKey, mutedRef.current.has(peerKey));
+    mixer.setModerationMuted(peerKey, mutedRef.current.has(peerKey));
     setPeerVolumes((v) => (peerKey in v ? v : { ...v, [peerKey]: mixer.volumeDe(peerKey) }));
   }, []);
 
@@ -155,6 +163,14 @@ export function useVoiceCall(
       proximo.delete(peerKey);
       return proximo;
     });
+    // Quem saiu nao pode continuar fixado ou aparecer como silenciado.
+    setPinned((atual) => (atual === peerKey ? null : atual));
+    setLocalMutedKeys((atual) => {
+      if (!atual.has(peerKey)) return atual;
+      const proximo = new Set(atual);
+      proximo.delete(peerKey);
+      return proximo;
+    });
   }, []);
 
   /** Volume de uma pessoa. 1 = original, ate VOLUME_MAXIMO de reforco. */
@@ -174,6 +190,8 @@ export function useVoiceCall(
     mixerRef.current.stop();
     setRemoteScreens(new Map());
     setPeersPausados({});
+    setLocalMutedKeys(new Set());
+    setPinned(null);
     void window.concord.presence.setVoiceChannel(null).catch(() => undefined);
     void window.concord.settings.setCallActive(false).catch(() => undefined);
     sounds.play('leave');
@@ -236,7 +254,15 @@ export function useVoiceCall(
                   ? s.participants.map((p) => (p.key === peerKey ? { ...p, connection } : p))
                   : [
                       ...s.participants,
-                      { key: peerKey, name: nomeDe(peerKey), connection, stats: null, latency: null },
+                      {
+                        key: peerKey,
+                        name: nomeDe(peerKey),
+                        connection,
+                        stats: null,
+                        latency: null,
+                        speaking: false,
+                        muted: mutedRef.current.has(peerKey),
+                      },
                     ],
               }));
             },
@@ -298,6 +324,75 @@ export function useVoiceCall(
     }, 2000);
     return () => clearInterval(id);
   }, [state.channelId]);
+
+  /**
+   * Quem esta falando agora, a partir do nivel de audio real de cada faixa.
+   *
+   * 150ms e rapido o bastante para o anel acender junto com a fala, sem
+   * chegar a ser um medidor de VU - so um sim/nao por pessoa.
+   *
+   * O LIMIAR e a HISTERESE evitam o pisca-pisca em fala normal: fica "falando"
+   * um pouco alem do ultimo som para nao apagar entre palavras, mas nao tanto
+   * que pareca travado depois que a pessoa para.
+   */
+  useEffect(() => {
+    if (!state.channelId) return;
+    const LIMIAR = 0.02;
+    const HISTERESE_MS = 300;
+    const ultimaFala = new Map<string, number>();
+
+    const id = setInterval(() => {
+      const transport = transportRef.current;
+      if (!transport) return;
+      const niveis = transport.audioLevels();
+      const agora = Date.now();
+
+      for (const [key, nivel] of niveis) {
+        if (nivel >= LIMIAR) ultimaFala.set(key, agora);
+      }
+
+      setState((s) => {
+        let mudou = false;
+        const participants = s.participants.map((p) => {
+          const falandoAgora = (agora - (ultimaFala.get(p.key) ?? 0)) < HISTERESE_MS;
+          if (falandoAgora === p.speaking) return p;
+          mudou = true;
+          return { ...p, speaking: falandoAgora };
+        });
+        return mudou ? { ...s, participants } : s;
+      });
+    }, 150);
+
+    return () => clearInterval(id);
+  }, [state.channelId]);
+
+  // A lista de silenciados por moderacao tambem precisa refletir no campo
+  // `muted` de cada participante, usado pelos indicadores visuais.
+  useEffect(() => {
+    setState((s) => ({
+      ...s,
+      participants: s.participants.map((p) =>
+        p.muted === mutedKeys.has(p.key) ? p : { ...p, muted: mutedKeys.has(p.key) },
+      ),
+    }));
+  }, [mutedKeys]);
+
+  /** Silencia (ou volta a ouvir) uma pessoa so para mim. */
+  const toggleLocalMute = useCallback((peerKey: string) => {
+    setLocalMutedKeys((atual) => {
+      const proximo = new Set(atual);
+      const ligar = !proximo.has(peerKey);
+      if (ligar) proximo.add(peerKey);
+      else proximo.delete(peerKey);
+      mixerRef.current.setLocalMuted(peerKey, ligar);
+      return proximo;
+    });
+  }, []);
+
+  /** Fixa uma pessoa no palco; clicar em quem ja esta fixado desafixa. */
+  const togglePin = useCallback((peerKey: string) => {
+    setPinned((atual) => (atual === peerKey ? null : peerKey));
+  }, []);
 
   const toggleMute = useCallback(() => {
     setState((s) => {
@@ -456,7 +551,7 @@ export function useVoiceCall(
   // A lista de silenciados muda por operacao vinda da rede; reaplica na hora.
   useEffect(() => {
     const mixer = mixerRef.current;
-    for (const peerKey of mixer.keys()) mixer.setMuted(peerKey, mutedKeys.has(peerKey));
+    for (const peerKey of mixer.keys()) mixer.setModerationMuted(peerKey, mutedKeys.has(peerKey));
   }, [mutedKeys]);
 
   useEffect(() => {
@@ -486,5 +581,9 @@ export function useVoiceCall(
     peersPausados,
     peerVolumes,
     setPeerVolume,
+    localMutedKeys,
+    toggleLocalMute,
+    pinned,
+    togglePin,
   };
 }

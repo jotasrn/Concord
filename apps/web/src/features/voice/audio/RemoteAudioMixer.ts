@@ -27,8 +27,16 @@ interface PeerAudio {
   stream: MediaStream | null;
   /** 0 a VOLUME_MAXIMO, onde 1 e o volume original. */
   volume: number;
-  /** Silenciado pela moderacao. */
-  muted: boolean;
+  /** Silenciado pela moderacao do servidor - aplicado a todo mundo igual. */
+  moderationMuted: boolean;
+  /**
+   * Silenciado so para mim.
+   *
+   * Diferente da moderacao: e uma preferencia pessoal ("nao quero ouvir esta
+   * pessoa agora"), nao uma punicao. Ninguem alem de mim sabe que apliquei
+   * isso, e por isso fica de fora do log de operacoes.
+   */
+  localMuted: boolean;
   source: MediaStreamAudioSourceNode | null;
   gain: GainNode | null;
 }
@@ -78,7 +86,8 @@ export class RemoteAudioMixer {
         element,
         stream: null,
         volume: RemoteAudioMixer.volumeSalvo(peerKey),
-        muted: false,
+        moderationMuted: false,
+        localMuted: false,
         source: null,
         gain: null,
       };
@@ -119,11 +128,24 @@ export class RemoteAudioMixer {
     this.aplicar(peerKey, peer);
   }
 
-  setMuted(peerKey: string, muted: boolean): void {
+  /** Silenciamento por moderacao. Vem do servidor; vale para todo mundo igual. */
+  setModerationMuted(peerKey: string, muted: boolean): void {
     const peer = this.peers.get(peerKey);
     if (!peer) return;
-    peer.muted = muted;
+    peer.moderationMuted = muted;
     this.aplicar(peerKey, peer);
+  }
+
+  /** Silenciamento local: so eu deixo de ouvir esta pessoa. */
+  setLocalMuted(peerKey: string, muted: boolean): void {
+    const peer = this.peers.get(peerKey);
+    if (!peer) return;
+    peer.localMuted = muted;
+    this.aplicar(peerKey, peer);
+  }
+
+  localMutedDe(peerKey: string): boolean {
+    return this.peers.get(peerKey)?.localMuted ?? false;
   }
 
   /** Silencia tudo de uma vez, sem perder o volume individual de cada um. */
@@ -144,7 +166,8 @@ export class RemoteAudioMixer {
   }
 
   private aplicar(_peerKey: string, peer: PeerAudio): void {
-    const alvo = peer.muted || this.deafened ? 0 : peer.volume;
+    const alvo =
+      peer.moderationMuted || peer.localMuted || this.deafened ? 0 : peer.volume;
 
     if (alvo <= 1) {
       this.desligarReforco(peer);

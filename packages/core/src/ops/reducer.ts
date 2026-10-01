@@ -3,6 +3,7 @@ import { Vault } from '../crypto/vault';
 import { Db, clearProjection, getAllOperations } from '../db/database';
 import { verifyOperation } from './sign';
 import { validatePayload } from './validate';
+import { selfCertifiedId } from './selfCert';
 import {
   ChannelCreatePayload,
   ChannelDeletePayload,
@@ -35,6 +36,28 @@ function hasPerm(mask: string, permission: Permission): boolean {
   const bits = BigInt(mask);
   if (bits & BigInt(Permission.ADMINISTRATOR)) return true;
   return (bits & BigInt(permission)) === BigInt(permission);
+}
+
+/**
+ * Hierarquia de moderacao: ninguem age sobre quem tem uma permissao que ela
+ * mesma nao possui.
+ *
+ * Sem isto, MANAGE_MEMBERS sozinho bastava para um Moderador expulsar,
+ * silenciar ou mudar o cargo de um Administrador - ou de outro Moderador com
+ * um conjunto de permissoes diferente. O preset "Moderador" tem
+ * MANAGE_MEMBERS, e nada no reducer conferia o alvo contra quem estava
+ * agindo.
+ *
+ * ADMINISTRATOR sempre passa (consistente com `hasPerm`: administrador pode
+ * tudo, inclusive mexer em outro administrador - e assim que o dono delega
+ * cargo igual ao proprio sem travar a si mesmo).
+ */
+function podeAgirSobre(permsDeQuemAge: string, permsDoAlvo: string): boolean {
+  const agente = BigInt(permsDeQuemAge);
+  if (agente & BigInt(Permission.ADMINISTRATOR)) return true;
+  const alvo = BigInt(permsDoAlvo);
+  // O alvo nao pode ter nenhuma permissao que o agente nao tenha.
+  return (alvo & ~agente) === 0n;
 }
 
 function memberPermissions(db: Db, serverId: string, userKey: string): string | null {
@@ -76,6 +99,25 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
       // existente para se tornar dono dele.
       if (existing) return 'servidor ja existe';
       if (p.serverId !== op.serverId) return 'serverId do payload nao confere';
+
+      /*
+       * O id precisa provar quem tem o direito de ser "o primeiro".
+       *
+       * Sem isto, "o primeiro server.create vence" dependia so da ordem de
+       * replay - decidida por `lamport`, um campo que o PROPRIO autor da
+       * operacao escolhe. Um impostor com a chave do servidor (inclusive
+       * alguem ja expulso, ja que a chave nunca roda) podia assinar um
+       * server.create com lamport bem baixo, troca-lo pela rede, e ganhar a
+       * corrida pela posse em todo peer que reconstruisse a projecao - o dono
+       * original deixava de ser membro do proprio servidor.
+       *
+       * Amarrando o id a sha256(autor + nonce), a operacao do impostor nunca
+       * tera o MESMO id do servidor que ele nao criou: produzir essa colisao
+       * exigiria uma segunda-preimagem do SHA-256.
+       */
+      if (selfCertifiedId(op.authorKey, p.nonce) !== p.serverId) {
+        return 'serverId nao corresponde ao autor (nao autocertificado)';
+      }
 
       db.prepare(
         'INSERT INTO servers (id, name, icon, owner_key, created_at) VALUES (?, ?, ?, ?, ?)',
@@ -184,6 +226,22 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
       // O dono nunca pode ser rebaixado, nem por um admin.
       if (server?.owner_key === p.userKey) return 'o dono nao pode ser rebaixado';
 
+      const permsDoAlvo = memberPermissions(db, op.serverId, p.userKey);
+      if (permsDoAlvo === null) return 'membro nao encontrado';
+
+      // Ninguem mexe em quem tem uma permissao que ela mesma nao possui -
+      // sem isto, um Moderador (MANAGE_MEMBERS) altera o cargo de um
+      // Administrador, ou de outro Moderador com permissoes diferentes.
+      if (!podeAgirSobre(perms, permsDoAlvo)) {
+        return 'alvo tem permissao que voce nao possui';
+      }
+      // E ninguem CONCEDE o que nao tem - sem isto, o mesmo Moderador se
+      // autopromove a Administrador, porque so a permissao de QUEM FAZ a
+      // mudanca era conferida, nunca as permissoes sendo entregues.
+      if (!podeAgirSobre(perms, p.permissions)) {
+        return 'nao pode conceder permissao que voce mesmo nao possui';
+      }
+
       const changed = db
         .prepare(
           'UPDATE members SET permissions = ?, role_name = ? WHERE server_id = ? AND user_key = ?',
@@ -223,6 +281,12 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
       if (server?.owner_key === p.userKey) return 'o dono nao pode ser expulso';
       if (p.userKey === op.authorKey) return 'use sair do servidor';
 
+      const permsDoAlvo = memberPermissions(db, op.serverId, p.userKey);
+      if (permsDoAlvo === null) return 'membro nao encontrado';
+      // Mesma hierarquia do cargo: KICK_MEMBERS nao basta para expulsar
+      // alguem com permissao que quem expulsa nao tem.
+      if (!podeAgirSobre(perms, permsDoAlvo)) return 'alvo tem permissao que voce nao possui';
+
       const changed = db
         .prepare('DELETE FROM members WHERE server_id = ? AND user_key = ?')
         .run(op.serverId, p.userKey);
@@ -240,6 +304,10 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
         | undefined;
       if (server?.owner_key === p.userKey) return 'o dono nao pode ser silenciado';
 
+      const permsDoAlvo = memberPermissions(db, op.serverId, p.userKey);
+      if (permsDoAlvo === null) return 'membro nao encontrado';
+      if (!podeAgirSobre(perms, permsDoAlvo)) return 'alvo tem permissao que voce nao possui';
+
       const changed = db
         .prepare('UPDATE members SET muted = ? WHERE server_id = ? AND user_key = ?')
         .run(p.muted ? 1 : 0, op.serverId, p.userKey);
@@ -251,6 +319,13 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
       const perms = memberPermissions(db, op.serverId, op.authorKey);
       if (!perms) return 'autor nao e membro';
       if (!hasPerm(perms, Permission.MANAGE_CHANNELS)) return 'sem MANAGE_CHANNELS';
+      // Mesma amarracao do server.create: o id prova de qual servidor o canal
+      // e, entao dois servidores nunca conseguem colidir no mesmo id - um
+      // deles "roubando" o canal (e o historico de mensagens) do outro ao
+      // disputar o mesmo id durante a reconstrucao da projecao.
+      if (selfCertifiedId(op.serverId, p.nonce) !== p.channelId) {
+        return 'channelId nao corresponde ao servidor (nao autocertificado)';
+      }
       if (db.prepare('SELECT id FROM channels WHERE id = ?').get(p.channelId)) {
         return 'canal ja existe';
       }
@@ -334,9 +409,20 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
     case 'message.edit': {
       const p = op.payload as MessageEditPayload;
       const msg = db
-        .prepare('SELECT author_key, deleted FROM messages WHERE id = ?')
-        .get(p.messageId) as { author_key: string; deleted: number } | undefined;
+        .prepare('SELECT author_key, server_id, deleted FROM messages WHERE id = ?')
+        .get(p.messageId) as
+        | { author_key: string; server_id: string; deleted: number }
+        | undefined;
       if (!msg) return 'mensagem desconhecida';
+      /*
+       * Mensagens tem id global (UUID), mas uma operacao so vale dentro do
+       * servidor que ela diz ser. Sem esta checagem, quem e autor de uma
+       * mensagem em QUALQUER servidor podia edita-la carimbando op.serverId
+       * com um servidor diferente - o id da mensagem e o unico dado usado
+       * para encontra-la, e `op.serverId` nunca era comparado contra o
+       * servidor de verdade dela.
+       */
+      if (msg.server_id !== op.serverId) return 'mensagem e de outro servidor';
       // Editar e sempre exclusivo do autor - nem admin edita palavra alheia.
       if (msg.author_key !== op.authorKey) return 'so o autor pode editar';
       if (msg.deleted) return 'mensagem apagada';
@@ -352,9 +438,17 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
     case 'message.delete': {
       const p = op.payload as MessageDeletePayload;
       const msg = db
-        .prepare('SELECT author_key FROM messages WHERE id = ?')
-        .get(p.messageId) as { author_key: string } | undefined;
+        .prepare('SELECT author_key, server_id FROM messages WHERE id = ?')
+        .get(p.messageId) as { author_key: string; server_id: string } | undefined;
       if (!msg) return 'mensagem desconhecida';
+      /*
+       * Mesma falha do message.edit, com um efeito pior aqui: um
+       * administrador do PROPRIO servidor (onde MANAGE_MEMBERS e legitimo)
+       * conseguia apagar a mensagem de QUALQUER outro servidor, bastava
+       * conhecer o id dela - a permissao era conferida em op.serverId (o
+       * servidor do atacante), nunca contra o servidor real da mensagem.
+       */
+      if (msg.server_id !== op.serverId) return 'mensagem e de outro servidor';
 
       const perms = memberPermissions(db, op.serverId, op.authorKey);
       if (!perms) return 'autor nao e membro';

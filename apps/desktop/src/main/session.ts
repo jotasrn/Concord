@@ -9,7 +9,9 @@ import {
   encryptKeystore,
   formatHandle,
   generateRecoveryPhrase,
+  identityFromPhrase,
   isValidRecoveryPhrase,
+  toHex,
 } from '@concord/core';
 
 /**
@@ -69,11 +71,40 @@ export class Session {
     writeFileSync(this.keystorePath, JSON.stringify(keystore, null, 2), 'utf8');
   }
 
-  /** Restaura em uma maquina nova usando so a frase. */
-  restoreAccount(displayName: string, password: string, phrase: string): void {
+  /**
+   * Restaura em uma maquina nova (ou recupera a senha esquecida) usando so a
+   * frase.
+   *
+   * Quando ja existe uma conta neste dispositivo, so prossegue sem pedir
+   * confirmacao se a frase pertencer a MESMA identidade (chave publica
+   * identica) - exatamente o caso de "esqueci a senha". A chave do Vault
+   * deriva so da semente da frase, nunca da senha, entao restaurar a mesma
+   * frase com senha nova e sempre seguro: o banco local continua legivel.
+   *
+   * Uma frase de identidade DIFERENTE sobrescreveria o keystore e tornaria o
+   * banco atual ilegivel para sempre - sem aviso nenhum antes desta checagem.
+   * Para esse caso, quem chama precisa passar `confirmOverwrite: true`
+   * explicitamente.
+   */
+  restoreAccount(
+    displayName: string,
+    password: string,
+    phrase: string,
+    confirmOverwrite = false,
+  ): void {
     if (!isValidRecoveryPhrase(phrase)) throw new Error('Frase de recuperacao invalida');
     if (password.length < 8) throw new Error('A senha precisa ter ao menos 8 caracteres');
     if (!displayName.trim()) throw new Error('Escolha um nome de exibicao');
+
+    if (this.hasAccount()) {
+      const atual = JSON.parse(readFileSync(this.keystorePath, 'utf8')) as EncryptedKeystore;
+      const novaIdentidade = identityFromPhrase(phrase, displayName.trim());
+      const mesmaConta = toHex(novaIdentidade.publicKey) === atual.publicKey;
+      if (!mesmaConta && !confirmOverwrite) {
+        throw new Error('CONTA_DIFERENTE');
+      }
+    }
+
     const keystore = encryptKeystore(phrase, password, displayName.trim());
     writeFileSync(this.keystorePath, JSON.stringify(keystore, null, 2), 'utf8');
   }

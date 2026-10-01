@@ -22,8 +22,8 @@ const api = {
     newPhrase: () => call<string>('account:newPhrase'),
     create: (displayName: string, password: string, phrase: string) =>
       call<boolean>('account:create', displayName, password, phrase),
-    restore: (displayName: string, password: string, phrase: string) =>
-      call<boolean>('account:restore', displayName, password, phrase),
+    restore: (displayName: string, password: string, phrase: string, confirmOverwrite?: boolean) =>
+      call<boolean>('account:restore', displayName, password, phrase, confirmOverwrite),
     unlock: (password: string) =>
       call<{ displayName: string; publicKey: string; handle: string }>(
         'account:unlock',

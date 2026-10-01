@@ -1,0 +1,53 @@
+# Roda em todo push e pull request - diferente de release.yml, que so
+# dispara em tag. Sem isto, nada testava um PR antes do merge: a brecha de
+# seguranca corrigida neste mesmo commit so foi pega por revisao manual, nao
+# pelo CI, porque o CI simplesmente nao rodava fora de uma tag.
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build (packages primeiro, na ordem de dependencia)
+        run: npm run build
+
+      # Inclui os testes de regressao de seguranca em ops/attacks.test.ts -
+      # se algum dia uma das cinco falhas da revisao externa reabrir, o
+      # build quebra aqui, nao em producao.
+      - name: Testes
+        run: npm test
+
+      - name: Vulnerabilidades conhecidas nas dependencias
+        run: npm audit --audit-level=high
+        # Uma dependencia transitiva com CVE alto nao deveria travar o PR
+        # sozinha sem alguem olhar - mas o resultado fica visivel no log.
+        continue-on-error: true
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3

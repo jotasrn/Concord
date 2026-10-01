@@ -1,4 +1,5 @@
-import { OpType } from './types';
+import { Operation, OpType } from './types';
+import { isValidNonce } from './selfCert';
 
 /**
  * Validacao de payloads vindos da rede.
@@ -72,6 +73,7 @@ function isDataUrlImage(value: unknown): boolean {
 const VALIDATORS: Record<OpType, Validator> = {
   'server.create': (p) =>
     isString(p.serverId, LIMITS.ID) &&
+    isValidNonce(p.nonce) &&
     isString(p.name, LIMITS.NAME) &&
     isOptionalString(p.icon, LIMITS.ICON) &&
     isString(p.ownerDisplayName, LIMITS.NAME),
@@ -105,6 +107,7 @@ const VALIDATORS: Record<OpType, Validator> = {
 
   'channel.create': (p) =>
     isString(p.channelId, LIMITS.ID) &&
+    isValidNonce(p.nonce) &&
     isString(p.name, LIMITS.NAME) &&
     (p.type === 'TEXT' || p.type === 'VOICE') &&
     isOptionalString(p.categoryId, LIMITS.ID) &&
@@ -141,4 +144,57 @@ export function validatePayload(type: OpType, payload: unknown): string | null {
   }
 
   return validator(payload as Record<string, unknown>) ? null : 'payload fora do formato esperado';
+}
+
+/**
+ * Teto para `seq` e `lamport`. Nao ha operacao legitima perto disso - serve
+ * so para rejeitar valores absurdos antes que cheguem a aritmetica do
+ * `compareOperations` (onde subtracao de numeros extremos pode perder
+ * precisao ou estourar).
+ */
+const MAX_COUNTER = 2 ** 31;
+
+/** Inteiro seguro, nao negativo e dentro do teto. */
+function isSaneCounter(value: unknown): boolean {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value < MAX_COUNTER;
+}
+
+/**
+ * `timestamp` e Date.now() - milissegundos desde 1970 - entao precisa de um
+ * teto bem maior que seq/lamport (hoje ja passa de 1.7 trilhao). So descarta
+ * o obviamente absurdo: negativo, fracionario ou de um futuro distante.
+ */
+const MAX_TIMESTAMP = 4_102_444_800_000; // ano 2100
+function isSaneTimestamp(value: unknown): boolean {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value < MAX_TIMESTAMP;
+}
+
+/**
+ * Forma minima que QUALQUER operacao precisa ter, antes mesmo de olhar o
+ * payload especifico do tipo.
+ *
+ * O campo que faltava checar era exatamente o que decide a ordem de replay:
+ * `lamport` e `seq` nunca eram validados, e a ordem (lamport, authorKey, seq)
+ * e o unico criterio de "quem veio primeiro" no log. Uma operacao com
+ * `lamport: -1` sempre replayava antes de qualquer coisa legitima - e e assim
+ * que um server.create forjado tomava um servidor existente (reducer.ts
+ * so confere "ja existe", e quem e aplicado primeiro decide quem e o dono).
+ *
+ * Isto sozinho nao fecha a corrida por completo (ver `selfCert.ts` para o que
+ * fecha de verdade no caso de server.create e channel.create), mas elimina a
+ * forma mais barata de ataque: valores negativos ou fora de qualquer faixa
+ * plausivel.
+ */
+export function isWellFormedOperation(op: Operation): boolean {
+  return (
+    isSaneCounter(op.seq) &&
+    isSaneCounter(op.lamport) &&
+    isSaneTimestamp(op.timestamp) &&
+    isPublicKey(op.authorKey) &&
+    isString(op.serverId, LIMITS.ID) &&
+    typeof op.id === 'string' &&
+    /^[0-9a-f]{64}$/.test(op.id) &&
+    typeof op.signature === 'string' &&
+    /^[0-9a-f]{128}$/.test(op.signature)
+  );
 }

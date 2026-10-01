@@ -125,7 +125,12 @@ export interface ConcordApi {
     status(): Promise<{ hasAccount: boolean; unlocked: boolean; displayName: string | null }>;
     newPhrase(): Promise<string>;
     create(displayName: string, password: string, phrase: string): Promise<boolean>;
-    restore(displayName: string, password: string, phrase: string): Promise<boolean>;
+    restore(
+      displayName: string,
+      password: string,
+      phrase: string,
+      confirmOverwrite?: boolean,
+    ): Promise<boolean>;
     unlock(password: string): Promise<Profile>;
     profile(): Promise<Profile>;
   };

@@ -83,7 +83,15 @@ export function operationsMissingFor(local: Operation[], remoteHeads: Heads): Op
   });
 }
 
-const MAX_FRAME_BYTES = 8 * 1024 * 1024;
+/**
+ * Teto de um frame.
+ *
+ * `sendOps` (p2p/node.ts) manda no maximo 200 operacoes por frame, e mesmo
+ * 200 avatares no limite (48KB cada) nao chegam a 1MB - 2MB sobra bastante
+ * para o caso real e ainda corta a maior parte do dano que um frame unico
+ * hostil conseguia causar antes (o teto era 8MB).
+ */
+const MAX_FRAME_BYTES = 2 * 1024 * 1024;
 
 /**
  * Enquadramento por linha. JSON nunca contem \n literal fora de string

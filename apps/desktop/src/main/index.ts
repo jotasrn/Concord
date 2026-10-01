@@ -72,7 +72,17 @@ function createWindow(): void {
       // pelo IPC, que valida a entrada no processo principal.
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      /*
+       * Sandbox ligado: o renderer (e o proprio preload) rodam na mesma
+       * jaula de processo que o Chromium usa pra paginas web normais, sem
+       * acesso a nenhuma API do Node alem do que o Electron libera
+       * explicitamente. Antes estava desligado sem necessidade - o preload
+       * so usa contextBridge/ipcRenderer (ambos funcionam sandboxed) - e
+       * um app que roda WebRTC e processa conteudo de outros peers (texto,
+       * imagem de avatar, video) e justamente o tipo de superficie que mais
+       * se beneficia dessa camada extra caso o Chromium tenha uma falha.
+       */
+      sandbox: true,
       // O Chromium reduz timers de janelas ocultas. Numa chamada isso cortaria
       // audio ao minimizar, entao o throttling fica desligado.
       backgroundThrottling: false,
@@ -119,7 +129,27 @@ function createWindow(): void {
   }
 
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    /*
+     * So http/https chegam ao shell.openExternal.
+     *
+     * MessageText.tsx ja restringe a isso o que vira link clicavel numa
+     * mensagem, mas window.open() pode ser chamado de qualquer lugar do
+     * renderer - inclusive de uma falha futura (uma lib de terceiro, um bug
+     * de escaping) que injete HTML/JS na pagina. Sem este filtro, QUALQUER
+     * esquema chegava direto ao shell.openExternal: `file:///...`,
+     * `ms-settings:`, um executavel local - um clique bastava para rodar
+     * algo fora do navegador, no proprio sistema operacional.
+     */
+    try {
+      const protocolo = new URL(url).protocol;
+      if (protocolo === 'http:' || protocolo === 'https:') {
+        void shell.openExternal(url);
+      } else {
+        log('error', `abertura externa bloqueada por esquema nao permitido: ${protocolo}`);
+      }
+    } catch {
+      // URL nem bem formada - nada a abrir.
+    }
     return { action: 'deny' };
   });
 

@@ -13,6 +13,8 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
   const [typedPhrase, setTypedPhrase] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** A frase digitada e de uma conta diferente da que ja esta neste dispositivo. */
+  const [precisaConfirmarTroca, setPrecisaConfirmarTroca] = useState(false);
 
   useEffect(() => {
     void window.concord.account.status().then((s) => {
@@ -57,9 +59,26 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
       onReady(profile);
     });
 
-  const restore = () =>
+  const restore = (confirmOverwrite = false) =>
     run(async () => {
-      await window.concord.account.restore(displayName, password, typedPhrase);
+      try {
+        await window.concord.account.restore(displayName, password, typedPhrase, confirmOverwrite);
+      } catch (e) {
+        /*
+         * CONTA_DIFERENTE: ja existe uma conta neste dispositivo e a frase
+         * digitada e de uma identidade DIFERENTE dela. Restaurar sobrescreve
+         * o keystore e torna o banco atual ilegivel para sempre (a chave do
+         * banco deriva da semente da frase antiga, que deixa de existir) -
+         * isso merece uma confirmacao explicita antes de acontecer, nao um
+         * erro generico.
+         */
+        if (e instanceof Error && e.message.includes('CONTA_DIFERENTE')) {
+          setPrecisaConfirmarTroca(true);
+          return;
+        }
+        throw e;
+      }
+      setPrecisaConfirmarTroca(false);
       const profile = await window.concord.account.unlock(password);
       onReady(profile);
     });
@@ -211,9 +230,34 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
                 onChange={setPassword}
                 placeholder="Nova senha para este dispositivo"
               />
-              <Button onClick={restore} disabled={busy} className="w-full">
-                {busy ? 'Restaurando...' : 'Restaurar'}
-              </Button>
+
+              {precisaConfirmarTroca ? (
+                <div className="space-y-2 rounded-lg border border-status-dnd/40 bg-status-dnd/10 p-3">
+                  <p className="flex items-start gap-2 text-xs text-status-dnd">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    Essa frase e de uma conta DIFERENTE da que ja esta neste
+                    dispositivo. Continuar substitui a conta atual, e as
+                    mensagens dela ficam ilegiveis para sempre - a chave que as
+                    protege muda junto com a identidade.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button onClick={() => restore(true)} disabled={busy} className="flex-1">
+                      {busy ? 'Substituindo...' : 'Substituir mesmo assim'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => setPrecisaConfirmarTroca(false)}
+                      className="flex-1"
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button onClick={() => restore()} disabled={busy} className="w-full">
+                  {busy ? 'Restaurando...' : 'Restaurar'}
+                </Button>
+              )}
             </>
           )}
         </div>

@@ -102,7 +102,8 @@ export async function installWebAdapter(): Promise<void> {
       status: () => call('account:status'),
       newPhrase: () => call('account:newPhrase'),
       create: (d: string, p: string, ph: string) => call('account:create', d, p, ph),
-      restore: (d: string, p: string, ph: string) => call('account:restore', d, p, ph),
+      restore: (d: string, p: string, ph: string, confirmOverwrite?: boolean) =>
+        call('account:restore', d, p, ph, confirmOverwrite),
       unlock: (p: string) => call('account:unlock', p),
       profile: () => call('account:profile'),
     },

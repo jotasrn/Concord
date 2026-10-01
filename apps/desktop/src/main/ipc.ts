@@ -98,9 +98,9 @@ export function registerIpc(
 
   ipcMain.handle(
     'account:restore',
-    (_e, displayName: string, password: string, phrase: string) =>
+    (_e, displayName: string, password: string, phrase: string, confirmOverwrite?: boolean) =>
       wrap(() => {
-        session.restoreAccount(displayName, password, phrase);
+        session.restoreAccount(displayName, password, phrase, confirmOverwrite === true);
         return true;
       }),
   );

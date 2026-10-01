@@ -121,8 +121,13 @@ async function dispatch(session: Session, channel: string, args: unknown[]): Pro
       return true;
     }
     case 'account:restore': {
-      const [displayName, password, phrase] = args as [string, string, string];
-      session.restoreAccount(displayName, password, phrase);
+      const [displayName, password, phrase, confirmOverwrite] = args as [
+        string,
+        string,
+        string,
+        boolean?,
+      ];
+      session.restoreAccount(displayName, password, phrase, confirmOverwrite === true);
       return true;
     }
     case 'account:unlock': {

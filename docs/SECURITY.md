@@ -42,12 +42,25 @@ quem recebe a operacao), nunca so no React.
 
 ## Em repouso
 
-- O SQLite local e cifrado por um **Vault** (`crypto/vault.ts`) cuja chave
-  deriva da semente da identidade e so existe em memoria apos o desbloqueio.
-  Sem senha, o banco e ruido.
-- Testes (`vault.test.ts`, `keystore.test.ts`) verificam que o arquivo em
-  disco nao contem nenhuma palavra da frase de recuperacao nem texto de
-  mensagem legivel.
+**Nem tudo no banco local e cifrado - so o que o Vault explicitamente sela.**
+Hoje isso e o conteudo de mensagem (`message.content`) e o codigo de convite
+pendente (que carrega a chave do servidor). O resto da projecao - nome de
+servidor e de canal, lista de membros, amigos, apelido, avatar, biografia, e
+os metadados de toda operacao do log (quem escreveu, em qual servidor, quando)
+- fica em **texto claro** no `concord.db`. Quem tiver acesso ao arquivo (um
+backup, outro usuario da mesma maquina, um antivirus que indexa o conteudo)
+le isso sem precisar de senha nenhuma.
+
+Isso e uma lacuna real, nao uma decisao deliberada - cifrar todos esses campos
+exigiria reescrever boa parte das queries da projecao (cada SELECT que hoje
+le a coluna direto passaria a abrir/fechar o Vault) e ainda deixaria o
+*volume* de mensagens e a *estrutura* dos servidores visiveis mesmo cifrando
+o conteudo. Fica registrado aqui para nao haver duvida sobre o que o Vault
+protege de fato.
+
+Testes (`vault.test.ts`, `keystore.test.ts`) verificam que o arquivo em disco
+nao contem nenhuma palavra da frase de recuperacao nem o texto de uma
+mensagem - so isso, nada alem disso.
 
 ## Validacao de entrada
 
@@ -96,6 +109,53 @@ fazer e parar de aceitar as operacoes dele. Por isso:
 - Navegacao para fora do app e bloqueada (`will-navigate`); links em
   mensagens abrem no navegador do sistema, nunca dentro da janela do
   Concord.
+
+## Revisao externa (commit 72edf04) - o que foi corrigido
+
+Uma avaliacao externa encontrou cinco falhas criticas na logica de
+autorizacao, confirmadas por prova de conceito. Corrigidas nesta rodada:
+
+| Falha | Correcao |
+| --- | --- |
+| Qualquer membro com a chave do servidor virava dono (server.create com `lamport` negativo vencia a corrida de replay) | `serverId` agora e autocertificado - `sha256(autor + nonce)`. Um impostor nunca produz o mesmo id de um servidor que nao criou, nao importa o lamport que escolha |
+| Moderador se autopromovia a administrador, ou agia sobre um administrador/outro moderador | `member.role`, `member.kick` e `member.mute` agora exigem que o alvo nao tenha nenhuma permissao que quem age tambem nao tenha, e que a permissao concedida esteja dentro da de quem concede |
+| Administrador do proprio servidor apagava mensagem de outro servidor | `message.edit`/`message.delete` conferem o `server_id` real da mensagem contra `op.serverId` |
+| Canal de um servidor "sequestrava" o id de um canal de outro | `channelId` tambem e autocertificado - `sha256(serverId + nonce)` |
+| Operacao com `op.serverId` diferente do envelope cifrado que a trouxe era aceita | `node.ts` descarta qualquer operacao cujo `serverId` nao bate com o envelope, antes de chegar no reducer |
+| Reflexao na prova de identidade (um peer no meio repassava o desafio de uma vitima para um terceiro e o fazia assinar por ele) | so o PRIMEIRO `auth:challenge` de cada conexao e respondido; qualquer challenge extra e ignorado |
+
+Tambem corrigido, fora da lista de cinco: `have`/`want`/`ops` agora exigem
+identidade ja provada (antes um peer conectado-mas-nao-verificado conseguia
+disparar sincronizacao completa); no maximo uma conexao viva por identidade
+(a mais antiga e encerrada ao verificar uma nova); lote de sincronizacao
+limitado a 200 operacoes por frame, e o teto de frame caiu de 8MB para 2MB.
+
+Os cinco ataques (e as variantes de cada um) viraram testes de regressao em
+[`ops/attacks.test.ts`](../packages/core/src/ops/attacks.test.ts) - rodam em
+todo `npm test`.
+
+### O que permanece em aberto
+
+- **Reescrever o passado continua possivel.** Uma mensagem com `lamport`
+  menor que o de um kick/mute e processada, no replay, ANTES da punicao -
+  indistinguivel de uma mensagem legitima atrasada pela rede (o proprio
+  projeto depende de aceitar isso para peers que voltam de offline
+  funcionarem). A correcao de verdade exige causalidade real no log - cada
+  operacao referenciando o hash das que seu autor conhecia ao cria-la, um DAG
+  em vez de um lamport livre - que e uma mudanca de formato de operacao,
+  nao um ajuste pontual.
+- **Expulsar nao revoga a chave do servidor.** Quem foi expulso continua
+  conseguindo decifrar qualquer coisa selada com aquela chave, inclusive
+  mensagens futuras, porque a chave nunca roda. Rotacionar ao expulsar
+  exigiria reenviar a chave nova a cada membro restante (sender keys ou algo
+  como MLS), uma mudanca de protocolo maior que o escopo desta rodada.
+- **A ponte web (`apps/server`) nao tem autenticacao nem limite por conexao.**
+  Cada WebSocket que conecta cria um no Hyperswarm e um diretorio proprios,
+  sem checagem nenhuma. Nao deveria rodar em producao exposta sem isso -
+  veja [DEPLOY_WEB.md](DEPLOY_WEB.md).
+- **Electron 32 esta fora do ciclo de suporte.** Atualizar exige testar a
+  build inteira (modulos nativos, empacotamento) numa maquina real antes de
+  distribuir - nao e algo para trocar as pressas.
 
 ## O que isso nao cobre
 

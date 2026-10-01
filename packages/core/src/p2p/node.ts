@@ -30,6 +30,17 @@ interface PeerConnection {
   identityKey: string | null;
   /** Nonce que enviamos; a resposta precisa ser assinada sobre ele. */
   challenge: string | null;
+  /**
+   * Ja respondemos a um 'auth:challenge' nesta conexao?
+   *
+   * So deveria existir UM challenge por conexao - o que o proprio handler de
+   * 'connection' manda na hora. Sem travar isso, um terceiro conectado a nos
+   * (M) podia nos mandar um 'auth:challenge' extra, forjado com o nonce que
+   * uma VITIMA (V) gerou para M em outra conexao - nos assinariamos de boa, e
+   * M devolveria essa assinatura a V se passando por nos. Assinar o nonce
+   * errado uma segunda vez e exatamente o que isto impede.
+   */
+  answeredChallenge: boolean;
 }
 
 /**
@@ -75,6 +86,7 @@ export class P2PNode extends EventEmitter {
         remoteKey,
         identityKey: null,
         challenge: null,
+        answeredChallenge: false,
       };
       this.peers.set(remoteKey, peer);
       this.emit('peer:connect', remoteKey);
@@ -251,15 +263,48 @@ export class P2PNode extends EventEmitter {
   }
 
   /** Cifra as operacoes com a chave do servidor antes de coloca-las na rede. */
+  /**
+   * Tamanho de cada lote de operacoes por frame.
+   *
+   * Sem isto, um peer que ficou offline muito tempo (ou um historico grande
+   * de servidor) virava UM frame so, do tamanho do catch-up inteiro - e o
+   * limite de frame (`MAX_FRAME_BYTES` em protocol.ts) precisava ser grande o
+   * bastante pra caber isso, o que tambem dava a QUALQUER UM margem para
+   * mandar um frame enorme de uma vez. Indo em lotes, o catch-up de qualquer
+   * tamanho sai em varios frames menores - cada um mais barato de decifrar
+   * e aplicar - sem qualquer mudanca para quem sincroniza normalmente.
+   */
+  private static readonly OPS_BATCH_SIZE = 200;
+
   private sendOps(peer: PeerConnection, serverId: string, ops: Operation[]): void {
     const key = this.store.serverKey(serverId);
     if (!key || ops.length === 0) return;
-    this.send(peer, { t: 'ops', serverId, sealed: seal(key, JSON.stringify(ops)) });
+    for (let i = 0; i < ops.length; i += P2PNode.OPS_BATCH_SIZE) {
+      const lote = ops.slice(i, i + P2PNode.OPS_BATCH_SIZE);
+      this.send(peer, { t: 'ops', serverId, sealed: seal(key, JSON.stringify(lote)) });
+    }
   }
 
   private handle(peer: PeerConnection, message: Message): void {
     switch (message.t) {
       case 'auth:challenge': {
+        /*
+         * So respondemos ao PRIMEIRO challenge desta conexao - o que o
+         * handler de 'connection' ja manda sozinho ao conectar.
+         *
+         * Um segundo challenge na mesma conexao so existe se o outro lado
+         * mandou de proposito, e o unico motivo para isso e um ataque de
+         * reflexao: um intermediario (M) conectado a nos e a um terceiro (T)
+         * ao mesmo tempo nos envia o nonce que T gerou para M, esperando que
+         * assinemos; M entao repassa nossa assinatura a T, fazendo T
+         * acreditar que esta falando diretamente conosco quando na verdade
+         * fala com M no meio. Ignorar qualquer challenge alem do primeiro
+         * fecha essa reflexao sem precisar inspecionar nada da camada de
+         * transporte do Hyperswarm.
+         */
+        if (peer.answeredChallenge) break;
+        peer.answeredChallenge = true;
+
         // Assina o nonce do outro lado para provar que temos a chave privada.
         if (typeof message.nonce !== 'string' || message.nonce.length > 128) break;
         this.send(peer, {
@@ -290,6 +335,21 @@ export class P2PNode extends EventEmitter {
 
         peer.identityKey = message.publicKey;
         peer.challenge = null;
+
+        /*
+         * No maximo uma conexao viva por identidade.
+         *
+         * Nada limitava quantas conexoes simultaneas uma MESMA chave publica
+         * podia abrir, e cada uma consome um socket e participa de
+         * sincronizacao completa. Encerrar a conexao mais antiga ao
+         * verificar uma nova (em vez de recusar a nova) favorece quem acabou
+         * de reconectar - o caso normal - sobre uma conexao zumbi.
+         */
+        for (const outra of this.peers.values()) {
+          if (outra.remoteKey !== peer.remoteKey && outra.identityKey === peer.identityKey) {
+            outra.socket.destroy();
+          }
+        }
 
         this.announcePresenceTo(peer);
         this.send(peer, { t: 'hello', servers: this.readableServers() });
@@ -345,6 +405,11 @@ export class P2PNode extends EventEmitter {
       }
 
       case 'have': {
+        // Sincronizar custa CPU (decifra, reconstroi a projecao inteira do
+        // lado de quem envia 'ops'). Sem exigir identidade provada, uma
+        // conexao que nunca completa o desafio ja conseguia disparar isso -
+        // bastava conhecer a chave do servidor, nem precisava provar quem e.
+        if (!peer.identityKey) break;
         if (!this.store.serverKey(message.serverId)) break;
         const locais = this.store.operationsFor(message.serverId);
         this.sendOps(peer, message.serverId, operationsMissingFor(locais, message.heads));
@@ -357,6 +422,7 @@ export class P2PNode extends EventEmitter {
       }
 
       case 'want': {
+        if (!peer.identityKey) break;
         if (!this.store.serverKey(message.serverId)) break;
         this.sendOps(
           peer,
@@ -367,6 +433,7 @@ export class P2PNode extends EventEmitter {
       }
 
       case 'ops': {
+        if (!peer.identityKey) break;
         const key = this.store.serverKey(message.serverId);
         if (!key) break;
 
@@ -383,8 +450,24 @@ export class P2PNode extends EventEmitter {
         }
         if (!Array.isArray(ops)) break;
 
+        /*
+         * O envelope (`message.serverId`) diz qual chave foi usada para
+         * selar isto, mas cada operacao carrega o PROPRIO `serverId`
+         * assinado - e nada antes conferia os dois contra o outro.
+         *
+         * Isso permitia um ataque entre servidores: alguem que e
+         * administrador do PROPRIO servidor X podia assinar uma operacao
+         * com `serverId: Y` (um servidor diferente, onde a vitima tambem
+         * esta) e manda-la pelo canal de X. `applyRemoteOperations` confere
+         * a permissao do autor EM Y - e como Y nao sabe que esta operacao
+         * nunca passou pelo topico de Y, ela era aceita. Descartar aqui
+         * qualquer operacao cujo serverId nao bate com o envelope fecha essa
+         * porta na origem, antes mesmo do reducer entrar em cena.
+         */
+        const doServidorCerto = ops.filter((op) => op.serverId === message.serverId);
+
         // applyRemoteOperations valida assinatura, formato e permissao.
-        const { accepted } = this.store.applyRemoteOperations(ops);
+        const { accepted } = this.store.applyRemoteOperations(doServidorCerto);
         if (accepted > 0) {
           this.emit('ops:received', { serverId: message.serverId, accepted });
         }

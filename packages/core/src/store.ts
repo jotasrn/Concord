@@ -16,8 +16,10 @@ import {
   openDatabase,
 } from './db/database';
 import { createOperation, verifyOperation } from './ops/sign';
+import { isWellFormedOperation, validatePayload } from './ops/validate';
 import { rebuildProjection } from './ops/reducer';
 import { OpPayload, OpType, Operation } from './ops/types';
+import { newNonce, selfCertifiedId } from './ops/selfCert';
 
 export interface ChannelView {
   id: string;
@@ -124,7 +126,23 @@ export class ConcordStore {
     let discarded = 0;
 
     for (const op of ops) {
+      // Forma antes de assinatura: `lamport`/`seq` fora de faixa nunca
+      // deveriam ter sido assinados por um cliente honesto, mas descartar por
+      // forma e mais barato que verificar uma assinatura que ia ser jogada
+      // fora de qualquer jeito.
+      if (!isWellFormedOperation(op)) {
+        discarded++;
+        continue;
+      }
       if (!verifyOperation(op)) {
+        discarded++;
+        continue;
+      }
+      // Payload tambem e checado aqui, nao so no replay: sem isso, uma
+      // operacao com payload invalido entrava no log mesmo que o reducer
+      // fosse sempre rejeita-la depois - envenenando o log de todo mundo que
+      // a recebesse, para sempre, por nada.
+      if (validatePayload(op.type, op.payload)) {
         discarded++;
         continue;
       }
@@ -212,11 +230,16 @@ export class ConcordStore {
   }
 
   createServer(name: string, icon: string | null = null): string {
-    const serverId = randomUUID();
+    // O id e autocertificado - sha256(dono + nonce) - para que "primeiro
+    // server.create vence" nao possa virar "quem escolheu o lamport mais
+    // baixo vence". Ver ops/selfCert.ts.
+    const nonce = newNonce();
+    const serverId = selfCertifiedId(this.publicKeyHex, nonce);
     // A chave nasce junto com o servidor e define o topico da DHT.
     saveServerKey(this.db, serverId, generateServerKey(), this.vault);
     this.commit('server.create', serverId, {
       serverId,
+      nonce,
       name,
       icon,
       ownerDisplayName: this.identity.displayName,
@@ -294,9 +317,14 @@ export class ConcordStore {
     type: 'TEXT' | 'VOICE' = 'TEXT',
     position = 0,
   ): string {
-    const channelId = randomUUID();
+    // Mesma logica do serverId: o id do canal e sha256(serverId + nonce), para
+    // que nenhum outro servidor consiga produzir um channel.create com o
+    // mesmo id (ver ops/selfCert.ts).
+    const nonce = newNonce();
+    const channelId = selfCertifiedId(serverId, nonce);
     this.commit('channel.create', serverId, {
       channelId,
+      nonce,
       name,
       type,
       categoryId: null,

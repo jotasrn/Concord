@@ -24,7 +24,21 @@ export type OpType =
   | 'message.delete';
 
 export interface ServerCreatePayload {
+  /**
+   * Autocertificado: precisa ser igual a sha256(authorKey + nonce). O reducer
+   * recusa qualquer operacao em que a conta nao feche.
+   *
+   * Sem isso, "o primeiro server.create vence" dependia so da ordem de
+   * replay - e essa ordem e decidida por `lamport`, um campo que o proprio
+   * autor escolhe. Bastava assinar um server.create com lamport bem baixo
+   * para ele replayar antes do original e tomar o servidor, trocando o dono
+   * em todos os peers que recebessem a operacao. Amarrando o id a quem
+   * criou, a operacao de um impostor nunca bate com o id de um servidor que
+   * nao foi ele quem criou - questao de identidade, nao de corrida.
+   */
   serverId: string;
+  /** Valor aleatorio que, junto da chave do autor, produz o serverId. */
+  nonce: string;
   name: string;
   icon: string | null;
   /**
@@ -104,7 +118,15 @@ export interface MemberMutePayload {
 }
 
 export interface ChannelCreatePayload {
+  /**
+   * Autocertificado: precisa ser igual a sha256(serverId + nonce). Mesma
+   * razao do serverId - sem isso, um servidor hostil poderia criar um canal
+   * com o MESMO id de um canal de outro servidor (os dois so compartilham o
+   * namespace de ids, nao os dados) e, dependendo da ordem de reconstrucao,
+   * apagar o canal legitimo do mapa ao disputar o mesmo id.
+   */
   channelId: string;
+  nonce: string;
   name: string;
   type: 'TEXT' | 'VOICE';
   categoryId: string | null;

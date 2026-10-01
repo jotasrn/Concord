@@ -125,12 +125,23 @@ CREATE TABLE IF NOT EXISTS friends (
 );
 
 -- Convites de servidor recebidos e ainda nao respondidos.
+/*
+ * Chave composta (server_id, from_key), nao so server_id.
+ *
+ * Com a chave sozinha, qualquer peer que soubesse o serverId de um convite ja
+ * pendente conseguia mandar o PROPRIO invite:offer para o mesmo servidor e
+ * SOBRESCREVER silenciosamente o codigo (logo, a chave do servidor) e o
+ * remetente do convite legitimo de um amigo - a vitima aceitaria achando que
+ * era do amigo. Com a chave composta, cada remetente tem sua propria linha:
+ * o convite de um nunca apaga o do outro.
+ */
 CREATE TABLE IF NOT EXISTS pending_invites (
-  server_id   TEXT PRIMARY KEY,
+  server_id   TEXT NOT NULL,
   server_name TEXT NOT NULL,
   from_key    TEXT NOT NULL,
   code        TEXT NOT NULL,
-  created_at  INTEGER NOT NULL
+  created_at  INTEGER NOT NULL,
+  PRIMARY KEY (server_id, from_key)
 );
 
 CREATE TABLE IF NOT EXISTS meta (

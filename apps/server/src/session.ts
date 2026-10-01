@@ -125,6 +125,12 @@ export class Session {
 
     this.node.on('friend:response', (r: { from: string; accepted: boolean; displayName: string }) => {
       const store = this.requireStore();
+      // So vira amizade se HAVIA um pedido nosso em aberto - ver a mesma
+      // checagem em apps/desktop/src/main/session.ts para a explicacao.
+      const pendente = store.social.getFriend(r.from);
+      if (pendente?.state !== 'PENDING_OUT') {
+        return;
+      }
       if (r.accepted) {
         store.social.upsertFriend(r.from, r.displayName, null, 'ACCEPTED');
       } else {

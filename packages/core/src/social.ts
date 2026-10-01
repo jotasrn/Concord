@@ -130,14 +130,18 @@ export class SocialStore {
       });
   }
 
+  /**
+   * Grava um convite pendente. A chave e (server_id, from_key): convites de
+   * remetentes diferentes para o mesmo servidor nunca se sobrescrevem - so um
+   * reenvio da MESMA pessoa atualiza o proprio convite dela.
+   */
   addPendingInvite(invite: Omit<PendingInvite, 'createdAt'>): void {
     this.db
       .prepare(
         `INSERT INTO pending_invites (server_id, server_name, from_key, code, created_at)
          VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (server_id) DO UPDATE SET
+         ON CONFLICT (server_id, from_key) DO UPDATE SET
            server_name = excluded.server_name,
-           from_key    = excluded.from_key,
            code        = excluded.code`,
       )
       .run(
@@ -149,6 +153,11 @@ export class SocialStore {
       );
   }
 
+  /**
+   * Remove TODOS os convites pendentes daquele servidor, de qualquer
+   * remetente - uma vez decidido sobre o servidor (aceito ou recusado),
+   * qualquer outro convite pendente para o mesmo lugar perde sentido.
+   */
   removePendingInvite(serverId: string): void {
     this.db.prepare('DELETE FROM pending_invites WHERE server_id = ?').run(serverId);
   }

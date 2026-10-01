@@ -136,6 +136,18 @@ export class Session {
 
     this.node.on('friend:response', (r: { from: string; accepted: boolean; displayName: string }) => {
       const store = this.requireStore();
+      /*
+       * So vira amizade se HAVIA um pedido nosso em aberto. Sem esta
+       * checagem, um estranho podia mandar friend:response{accepted:true}
+       * do nada e virar "amigo aceito" na nossa lista, sem nunca termos
+       * pedido nada - a amizade e o que da acesso a convite de servidor e a
+       * chamada direta, entao isso nao e so um registro errado, e uma porta
+       * de entrada.
+       */
+      const pendente = store.social.getFriend(r.from);
+      if (pendente?.state !== 'PENDING_OUT') {
+        return;
+      }
       if (r.accepted) {
         store.social.upsertFriend(r.from, r.displayName, null, 'ACCEPTED');
       } else {
@@ -162,9 +174,24 @@ export class Session {
     // social que ja alimenta os popups de amizade e convite - a interface so
     // precisa ouvir um lugar so. A sinalizacao WebRTC (muito mais frequente)
     // tem um canal proprio, no mesmo padrao do voice:signal de servidor.
-    this.node.on('call:invite', (r: { from: string; callId: string; displayName: string; avatar: string | null }) =>
-      this.onSocial('call:invite', r),
-    );
+    this.node.on('call:invite', (r: { from: string; callId: string; displayName: string; avatar: string | null }) => {
+      /*
+       * So toca o telefone para quem ja e amigo aceito.
+       *
+       * A chave publica de alguem e suficiente para descobrir o IP dela pela
+       * DHT (ja documentado em SECURITY.md) - sem esta checagem, qualquer
+       * estranho que soubesse sua chave conseguia abrir a tela cheia de
+       * chamada recebida na sua interface, com o nome que quisesse digitar.
+       * Recusa em silencio, sem nem mostrar o popup: quem ligou recebe um
+       * decline normal, nao fica esperando.
+       */
+      const amigo = this.requireStore().social.getFriend(r.from);
+      if (amigo?.state !== 'ACCEPTED') {
+        void this.node?.callRespond(r.from, r.callId, false).catch(() => undefined);
+        return;
+      }
+      this.onSocial('call:invite', r);
+    });
     this.node.on('call:accept', (r: { from: string; callId: string }) =>
       this.onSocial('call:accept', r),
     );

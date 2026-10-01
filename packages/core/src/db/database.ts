@@ -29,6 +29,37 @@ function addMissingColumns(db: Db): void {
   if (!users.has('self_declared')) {
     db.exec('ALTER TABLE users ADD COLUMN self_declared INTEGER NOT NULL DEFAULT 0');
   }
+
+  migratePendingInvitesKey(db);
+}
+
+/**
+ * Troca a chave primaria de `pending_invites` de `server_id` sozinho para
+ * `(server_id, from_key)` - SQLite nao tem `ALTER TABLE` para isso, entao a
+ * tabela e recriada preservando as linhas existentes.
+ *
+ * So roda quando detecta o formato antigo (uma unica coluna na chave).
+ */
+function migratePendingInvitesKey(db: Db): void {
+  const pk = (
+    db.prepare('PRAGMA table_info(pending_invites)').all() as { name: string; pk: number }[]
+  ).filter((c) => c.pk > 0);
+  const jaMigrado = pk.length !== 1 || pk[0]?.name !== 'server_id';
+  if (jaMigrado) return;
+
+  db.exec(`
+    ALTER TABLE pending_invites RENAME TO pending_invites_old;
+    CREATE TABLE pending_invites (
+      server_id   TEXT NOT NULL,
+      server_name TEXT NOT NULL,
+      from_key    TEXT NOT NULL,
+      code        TEXT NOT NULL,
+      created_at  INTEGER NOT NULL,
+      PRIMARY KEY (server_id, from_key)
+    );
+    INSERT INTO pending_invites SELECT * FROM pending_invites_old;
+    DROP TABLE pending_invites_old;
+  `);
 }
 
 export function openDatabase(path: string): Db {

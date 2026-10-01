@@ -130,6 +130,18 @@ disparar sincronizacao completa); no maximo uma conexao viva por identidade
 (a mais antiga e encerrada ao verificar uma nova); lote de sincronizacao
 limitado a 200 operacoes por frame, e o teto de frame caiu de 8MB para 2MB.
 
+E os tres itens sociais apontados como "Medios" numa revisao seguinte:
+- `friend:response{accepted:true}` so vira amizade se havia um pedido nosso
+  em aberto (`PENDING_OUT`) - antes qualquer estranho virava "amigo aceito"
+  do nada, e amizade e o que da acesso a convite de servidor e chamada direta.
+- `pending_invites` tinha chave unica so em `server_id`; qualquer peer que
+  soubesse o id de um convite ja pendente sobrescrevia o codigo (e o
+  remetente) do convite legitimo de um amigo. A chave virou composta
+  (`server_id`, `from_key`) - cada remetente tem sua propria linha.
+- `call:invite` tocava o telefone para qualquer chave publica, com o nome
+  que o remetente quisesse declarar. Agora so chega na interface quando o
+  remetente ja e amigo aceito; de resto, recusa em silencio.
+
 Os cinco ataques (e as variantes de cada um) viraram testes de regressao em
 [`ops/attacks.test.ts`](../packages/core/src/ops/attacks.test.ts) - rodam em
 todo `npm test`.

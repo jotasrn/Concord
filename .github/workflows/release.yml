@@ -22,7 +22,7 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Node 22, nao 20: o script de teste do core passa um glob
       # ("dist/**/*.test.js") direto para `node --test`, e a expansao de glob

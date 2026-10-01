@@ -68,7 +68,7 @@ jobs:
           npx electron-builder --config electron-builder.yml --win nsis zip
           --config.directories.output=release --publish never
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: concord-windows
           path: |

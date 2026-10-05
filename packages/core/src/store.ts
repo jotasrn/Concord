@@ -253,7 +253,11 @@ export class ConcordStore {
    * O log e por servidor, entao um perfil so replica para quem compartilha
    * pelo menos um servidor conosco - que e exatamente quem precisa ve-lo.
    */
-  updateProfile(profile: { displayName: string; avatar: string | null; bio: string | null }): string[] {
+  updateProfile(profile: {
+    displayName: string;
+    avatar: string | null;
+    bio: string | null;
+  }): string[] {
     const afetados: string[] = [];
     for (const server of this.listServers()) {
       this.commit('user.profile', server.id, {
@@ -356,13 +360,12 @@ export class ConcordStore {
 
   /** Quanto o historico local esta ocupando, em numeros que a UI mostra. */
   storageUsage(): { operations: number; messages: number; avatarBytes: number } {
-    const conta = (sql: string) =>
-      Number((this.db.prepare(sql).get() as { n: number }).n ?? 0);
+    const conta = (sql: string) => Number((this.db.prepare(sql).get() as { n: number }).n ?? 0);
 
     return {
       operations: conta('SELECT COUNT(*) AS n FROM ops'),
       messages: conta('SELECT COUNT(*) AS n FROM messages WHERE deleted = 0'),
-      avatarBytes: conta("SELECT COALESCE(SUM(LENGTH(avatar)), 0) AS n FROM users"),
+      avatarBytes: conta('SELECT COALESCE(SUM(LENGTH(avatar)), 0) AS n FROM users'),
     };
   }
 

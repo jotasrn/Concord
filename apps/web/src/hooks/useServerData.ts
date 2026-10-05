@@ -22,9 +22,7 @@ export interface ServerDataState {
  * Extraído de AppPage para manter o componente principal focado apenas em
  * renderização e interação - a lógica de dados fica aqui.
  */
-export function useServerData(
-  report: (e: unknown) => void,
-): ServerDataState {
+export function useServerData(report: (e: unknown) => void): ServerDataState {
   const [servers, setServers] = useState<ServerView[]>([]);
   const [channels, setChannels] = useState<ChannelView[]>([]);
   const [members, setMembers] = useState<MemberView[]>([]);
@@ -42,31 +40,37 @@ export function useServerData(
     }
   }, [report]);
 
-  const loadServerContent = useCallback(async (serverId: string) => {
-    try {
-      const [chans, mems] = await Promise.all([
-        window.concord.channels.list(serverId),
-        window.concord.members.list(serverId),
-      ]);
-      setChannels(chans);
-      setMembers(mems);
-      setActiveChannel((current) =>
-        current && chans.some((c) => c.id === current)
-          ? current
-          : (chans.find((c) => c.type === 'TEXT')?.id ?? null),
-      );
-    } catch (e) {
-      report(e);
-    }
-  }, [report]);
+  const loadServerContent = useCallback(
+    async (serverId: string) => {
+      try {
+        const [chans, mems] = await Promise.all([
+          window.concord.channels.list(serverId),
+          window.concord.members.list(serverId),
+        ]);
+        setChannels(chans);
+        setMembers(mems);
+        setActiveChannel((current) =>
+          current && chans.some((c) => c.id === current)
+            ? current
+            : (chans.find((c) => c.type === 'TEXT')?.id ?? null),
+        );
+      } catch (e) {
+        report(e);
+      }
+    },
+    [report],
+  );
 
-  const loadMessages = useCallback(async (channelId: string) => {
-    try {
-      setMessages(await window.concord.messages.list(channelId, 100));
-    } catch (e) {
-      report(e);
-    }
-  }, [report]);
+  const loadMessages = useCallback(
+    async (channelId: string) => {
+      try {
+        setMessages(await window.concord.messages.list(channelId, 100));
+      } catch (e) {
+        report(e);
+      }
+    },
+    [report],
+  );
 
   useEffect(() => {
     void loadServers();

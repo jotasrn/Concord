@@ -84,7 +84,11 @@ test('clientIp so confia em X-Forwarded-For com TRUST_PROXY', () => {
 });
 
 test('loadLimitConfig usa padrao para valores invalidos', () => {
-  const c = loadLimitConfig({ MAX_SESSIONS: '10', MAX_SESSIONS_PER_IP: '-1', MAX_PAYLOAD_BYTES: 'x' });
+  const c = loadLimitConfig({
+    MAX_SESSIONS: '10',
+    MAX_SESSIONS_PER_IP: '-1',
+    MAX_PAYLOAD_BYTES: 'x',
+  });
   assert.equal(c.maxSessions, 10);
   assert.equal(c.maxSessionsPerIp, 3);
   assert.equal(c.maxPayloadBytes, 256 * 1024);

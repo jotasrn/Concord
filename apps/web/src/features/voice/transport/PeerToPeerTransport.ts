@@ -381,9 +381,11 @@ export class PeerToPeerTransport implements VoiceTransport {
       }
 
       case 'state': {
-        const data = signal.data as
-          | { sharing?: boolean; paused?: boolean; resend?: boolean }
-          | null;
+        const data = signal.data as {
+          sharing?: boolean;
+          paused?: boolean;
+          resend?: boolean;
+        } | null;
         if (!data) return;
 
         /*

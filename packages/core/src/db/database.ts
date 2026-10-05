@@ -182,9 +182,8 @@ export function saveServerKey(db: Db, serverId: string, key: Buffer, vault: Vaul
 }
 
 export function getServerKey(db: Db, serverId: string, vault: Vault): Buffer | null {
-  const row = db
-    .prepare('SELECT key_hex FROM server_keys WHERE server_id = ?')
-    .get(serverId) as { key_hex: string } | undefined;
+  const row = db.prepare('SELECT key_hex FROM server_keys WHERE server_id = ?').get(serverId) as
+    { key_hex: string } | undefined;
   return row ? Buffer.from(vault.open(row.key_hex), 'hex') : null;
 }
 

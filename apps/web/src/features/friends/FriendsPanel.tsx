@@ -106,8 +106,8 @@ export function FriendsPanel({
           </Button>
         </div>
         <p className="text-[11px] text-ink-400">
-          Peca a chave dela em Configuracoes &rarr; Meu perfil. O pedido chega direto no
-          dispositivo da pessoa.
+          Peca a chave dela em Configuracoes &rarr; Meu perfil. O pedido chega direto no dispositivo
+          da pessoa.
         </p>
       </section>
 
@@ -169,9 +169,7 @@ export function FriendsPanel({
         <label className="text-xs uppercase tracking-wide text-ink-400">
           Meus amigos &mdash; {aceitos.length}
         </label>
-        {aceitos.length === 0 && (
-          <p className="text-sm text-ink-400">Nenhum amigo ainda.</p>
-        )}
+        {aceitos.length === 0 && <p className="text-sm text-ink-400">Nenhum amigo ainda.</p>}
         {aceitos.map((f) => (
           <div key={f.userKey} className="flex items-center gap-2 rounded-lg bg-void-850 p-2">
             <Avatar
@@ -193,7 +191,9 @@ export function FriendsPanel({
             {presencaDe(f.userKey) !== 'OFFLINE' && (
               <button
                 title={`Ligar para ${f.displayName || 'esta pessoa'}`}
-                onClick={() => onCall(f.userKey, f.displayName || `#${f.userKey.slice(0, 8)}`, f.avatar)}
+                onClick={() =>
+                  onCall(f.userKey, f.displayName || `#${f.userKey.slice(0, 8)}`, f.avatar)
+                }
                 className="rounded-full bg-status-online/15 p-1.5 text-status-online transition hover:bg-status-online/25"
               >
                 <Phone className="h-3.5 w-3.5" />
@@ -234,9 +234,9 @@ export function FriendsPanel({
 
       <p className="flex items-start gap-2 text-[11px] text-ink-400">
         <Send className="mt-0.5 h-3 w-3 shrink-0" />
-        Pedidos viajam direto entre os dois dispositivos, sem servidor no meio. Se a pessoa
-        estiver offline, o pedido fica na fila e sai quando ela abrir o app - com os dois online
-        ao mesmo tempo.
+        Pedidos viajam direto entre os dois dispositivos, sem servidor no meio. Se a pessoa estiver
+        offline, o pedido fica na fila e sai quando ela abrir o app - com os dois online ao mesmo
+        tempo.
       </p>
     </div>
   );

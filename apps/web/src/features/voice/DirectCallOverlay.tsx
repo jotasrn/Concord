@@ -86,13 +86,23 @@ export function DirectCallOverlay({
         <div className="relative aspect-video w-full max-w-4xl overflow-hidden rounded-xl border border-violet-800/50 bg-black">
           <Video stream={state.remoteScreen} />
           <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-linear-to-t from-black/90 to-transparent px-3 py-2">
-            <Avatar name={state.peerName} userKey={state.peerKey ?? ''} src={state.peerAvatar} size={28} />
+            <Avatar
+              name={state.peerName}
+              userKey={state.peerKey ?? ''}
+              src={state.peerAvatar}
+              size={28}
+            />
             <span className="text-sm font-semibold text-ink-100">{state.peerName}</span>
           </div>
         </div>
       ) : (
         <div className="relative mb-6">
-          <Avatar name={state.peerName} userKey={state.peerKey ?? ''} src={state.peerAvatar} size={112} />
+          <Avatar
+            name={state.peerName}
+            userKey={state.peerKey ?? ''}
+            src={state.peerAvatar}
+            size={112}
+          />
           {(tocandoRecebida || tocandoSaida) && (
             <span className="absolute -inset-2 animate-pulse-ring rounded-full ring-4 ring-violet-500" />
           )}
@@ -141,7 +151,9 @@ export function DirectCallOverlay({
                 onClick={onToggleMute}
                 title={state.muted ? 'Desmutar' : 'Mutar'}
                 className={`rounded-full p-3 transition ${
-                  state.muted ? 'bg-status-dnd/20 text-status-dnd' : 'bg-void-700 text-ink-200 hover:bg-void-600'
+                  state.muted
+                    ? 'bg-status-dnd/20 text-status-dnd'
+                    : 'bg-void-700 text-ink-200 hover:bg-void-600'
                 }`}
               >
                 {state.muted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
@@ -150,10 +162,16 @@ export function DirectCallOverlay({
                 onClick={onToggleDeafen}
                 title={state.deafened ? 'Ouvir' : 'Silenciar'}
                 className={`rounded-full p-3 transition ${
-                  state.deafened ? 'bg-status-dnd/20 text-status-dnd' : 'bg-void-700 text-ink-200 hover:bg-void-600'
+                  state.deafened
+                    ? 'bg-status-dnd/20 text-status-dnd'
+                    : 'bg-void-700 text-ink-200 hover:bg-void-600'
                 }`}
               >
-                {state.deafened ? <HeadphoneOff className="h-5 w-5" /> : <Headphones className="h-5 w-5" />}
+                {state.deafened ? (
+                  <HeadphoneOff className="h-5 w-5" />
+                ) : (
+                  <Headphones className="h-5 w-5" />
+                )}
               </button>
               <button
                 onClick={state.screenSharing ? onStopScreenShare : onStartScreenShare}
@@ -164,7 +182,11 @@ export function DirectCallOverlay({
                     : 'bg-void-700 text-ink-200 hover:bg-void-600'
                 }`}
               >
-                {state.screenSharing ? <MonitorOff className="h-5 w-5" /> : <Monitor className="h-5 w-5" />}
+                {state.screenSharing ? (
+                  <MonitorOff className="h-5 w-5" />
+                ) : (
+                  <Monitor className="h-5 w-5" />
+                )}
               </button>
               <div className="flex items-center gap-1.5 rounded-full bg-void-800 px-3 py-2">
                 <input

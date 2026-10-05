@@ -56,7 +56,10 @@ async function subir(limites: Partial<LimitConfig> = {}): Promise<Ambiente> {
 
 class Cliente {
   private seq = 0;
-  private readonly pend = new Map<string, (r: { ok: boolean; data?: unknown; error?: string }) => void>();
+  private readonly pend = new Map<
+    string,
+    (r: { ok: boolean; data?: unknown; error?: string }) => void
+  >();
   readonly fechado: Promise<{ code: number }>;
 
   private constructor(readonly ws: WebSocket) {
@@ -83,7 +86,10 @@ class Cliente {
     });
   }
 
-  call(channel: string, ...args: unknown[]): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+  call(
+    channel: string,
+    ...args: unknown[]
+  ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
     const id = String(++this.seq);
     return new Promise((r) => {
       this.pend.set(id, r);
@@ -131,7 +137,12 @@ test('conta sobrevive a reconexao com o mesmo token (o F5 nao perde a conta)', a
   try {
     const a = await Cliente.abrir(amb.url);
     assert.equal((await a.call('session:hello', TOKEN)).ok, true);
-    const criar = await a.call('account:create', 'Joao', 'senha-forte-123', generateRecoveryPhrase());
+    const criar = await a.call(
+      'account:create',
+      'Joao',
+      'senha-forte-123',
+      generateRecoveryPhrase(),
+    );
     assert.equal(criar.ok, true, criar.error);
     await a.fechar();
 
@@ -144,7 +155,11 @@ test('conta sobrevive a reconexao com o mesmo token (o F5 nao perde a conta)', a
     const outro = await Cliente.abrir(amb.url);
     await outro.call('session:hello', 'f'.repeat(64));
     const st2 = await outro.call('account:status');
-    assert.equal((st2.data as { hasAccount: boolean }).hasAccount, false, 'outro token, outra pasta');
+    assert.equal(
+      (st2.data as { hasAccount: boolean }).hasAccount,
+      false,
+      'outro token, outra pasta',
+    );
     await outro.fechar();
   } finally {
     await amb.fechar();

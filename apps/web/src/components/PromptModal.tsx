@@ -22,13 +22,7 @@ export interface PromptRequest {
  * Substitui window.prompt(), que o Electron nao implementa - usa-lo deixava os
  * botoes de criar servidor e canal sem efeito no app empacotado.
  */
-export function PromptModal({
-  request,
-  onClose,
-}: {
-  request: PromptRequest;
-  onClose: () => void;
-}) {
+export function PromptModal({ request, onClose }: { request: PromptRequest; onClose: () => void }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
@@ -66,9 +60,7 @@ export function PromptModal({
       <div className="panel w-full max-w-sm space-y-4 p-5">
         <div className="space-y-1">
           <h3 className="text-base font-bold text-ink-100">{request.title}</h3>
-          {request.description && (
-            <p className="text-xs text-ink-400">{request.description}</p>
-          )}
+          {request.description && <p className="text-xs text-ink-400">{request.description}</p>}
         </div>
 
         {request.fields.map((field, index) => (

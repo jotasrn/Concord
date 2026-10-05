@@ -77,9 +77,7 @@ export function CallPanel({
     <section className="border-t border-violet-900/60 bg-violet-950/20 p-3">
       <header className="mb-2 flex items-center gap-2">
         <Volume2 className="h-3.5 w-3.5 text-violet-400" />
-        <span className="truncate text-xs font-semibold text-violet-200">
-          {state.channelName}
-        </span>
+        <span className="truncate text-xs font-semibold text-violet-200">{state.channelName}</span>
         {state.connecting ? (
           <span className="text-[10px] text-ink-400">conectando...</span>
         ) : (

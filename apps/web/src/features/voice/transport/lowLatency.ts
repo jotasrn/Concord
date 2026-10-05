@@ -199,9 +199,7 @@ export function readLatency(report: RTCStatsReport): LatencyBreakdown {
   });
 
   const total =
-    networkMs !== null || jitterBufferMs !== null
-      ? (networkMs ?? 0) + (jitterBufferMs ?? 0)
-      : null;
+    networkMs !== null || jitterBufferMs !== null ? (networkMs ?? 0) + (jitterBufferMs ?? 0) : null;
 
   return { networkMs, jitterBufferMs, totalMs: total };
 }

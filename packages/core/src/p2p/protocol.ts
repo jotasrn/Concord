@@ -141,7 +141,14 @@ export interface VoiceSignal {
   data?: unknown;
 }
 
-const VOICE_KINDS: ReadonlySet<string> = new Set(['join', 'leave', 'offer', 'answer', 'ice', 'state']);
+const VOICE_KINDS: ReadonlySet<string> = new Set([
+  'join',
+  'leave',
+  'offer',
+  'answer',
+  'ice',
+  'state',
+]);
 
 /**
  * Teto do sinal serializado. SDP com video e simulcast fica em poucos KB;

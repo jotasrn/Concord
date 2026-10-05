@@ -29,7 +29,9 @@ export function newNonce(): string {
 
 /** sha256(ownerKeyHex + nonce), em hex - vira o id autocertificado. */
 export function selfCertifiedId(ownerKeyHex: string, nonce: string): string {
-  return createHash('sha256').update(ownerKeyHex + nonce).digest('hex');
+  return createHash('sha256')
+    .update(ownerKeyHex + nonce)
+    .digest('hex');
 }
 
 /** Formato esperado do nonce: 32 chars hex (16 bytes). */

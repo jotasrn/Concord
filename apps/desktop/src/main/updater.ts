@@ -22,13 +22,7 @@ import { markQuitting } from './background';
  */
 
 export type UpdateState =
-  | 'idle'
-  | 'checking'
-  | 'available'
-  | 'downloading'
-  | 'ready'
-  | 'unsupported'
-  | 'error';
+  'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'unsupported' | 'error';
 
 export interface UpdateStatus {
   state: UpdateState;

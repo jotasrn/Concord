@@ -25,10 +25,7 @@ const api = {
     restore: (displayName: string, password: string, phrase: string, confirmOverwrite?: boolean) =>
       call<boolean>('account:restore', displayName, password, phrase, confirmOverwrite),
     unlock: (password: string) =>
-      call<{ displayName: string; publicKey: string; handle: string }>(
-        'account:unlock',
-        password,
-      ),
+      call<{ displayName: string; publicKey: string; handle: string }>('account:unlock', password),
     profile: () =>
       call<{ displayName: string; publicKey: string; handle: string }>('account:profile'),
   },
@@ -50,8 +47,7 @@ const api = {
       call<boolean>('members:role', serverId, userKey, permissions, roleName),
     mute: (serverId: string, userKey: string, muted: boolean) =>
       call<boolean>('members:mute', serverId, userKey, muted),
-    kick: (serverId: string, userKey: string) =>
-      call<boolean>('members:kick', serverId, userKey),
+    kick: (serverId: string, userKey: string) => call<boolean>('members:kick', serverId, userKey),
     roles: () =>
       call<{
         presets: { id: string; label: string; description: string; permissions: string }[];
@@ -95,10 +91,10 @@ const api = {
       call<boolean>('messages:delete', serverId, messageId),
   },
   voice: {
-    signal: (serverId: string, signal: unknown) =>
-      call<boolean>('voice:signal', serverId, signal),
+    signal: (serverId: string, signal: unknown) => call<boolean>('voice:signal', serverId, signal),
     onSignal: (handler: (serverId: string, signal: unknown) => void) => {
-      const listener = (_e: unknown, serverId: string, signal: unknown) => handler(serverId, signal);
+      const listener = (_e: unknown, serverId: string, signal: unknown) =>
+        handler(serverId, signal);
       ipcRenderer.on('voice:incoming', listener);
       return () => ipcRenderer.removeListener('voice:incoming', listener);
     },
@@ -114,8 +110,7 @@ const api = {
           createdAt: number;
         }[]
       >('friends:list'),
-    request: (targetKey: string) =>
-      call<'entregue' | 'na-fila'>('friends:request', targetKey),
+    request: (targetKey: string) => call<'entregue' | 'na-fila'>('friends:request', targetKey),
     respond: (targetKey: string, accepted: boolean) =>
       call<boolean>('friends:respond', targetKey, accepted),
     remove: (targetKey: string) => call<boolean>('friends:remove', targetKey),
@@ -187,8 +182,7 @@ const api = {
       call<{ operations: number; messages: number; avatarBytes: number; diskBytes: number }>(
         'settings:usage',
       ),
-    prune: (olderThanDays: number) =>
-      call<{ removed: number }>('settings:prune', olderThanDays),
+    prune: (olderThanDays: number) => call<{ removed: number }>('settings:prune', olderThanDays),
     setCallActive: (active: boolean) => call<boolean>('settings:callActive', active),
   },
   update: {
@@ -214,14 +208,12 @@ const api = {
       } | null>('profile:get', userKey),
   },
   presence: {
-    set: (status: 'ONLINE' | 'IDLE' | 'DND' | 'INVISIBLE') =>
-      call<boolean>('presence:set', status),
+    set: (status: 'ONLINE' | 'IDLE' | 'DND' | 'INVISIBLE') => call<boolean>('presence:set', status),
     get: () =>
       call<{ status: string; peers: Record<string, { status: string; voice: string | null }> }>(
         'presence:get',
       ),
-    setVoiceChannel: (channelId: string | null) =>
-      call<boolean>('presence:voice', channelId),
+    setVoiceChannel: (channelId: string | null) => call<boolean>('presence:voice', channelId),
     onUpdate: (
       handler: (peers: Record<string, { status: string; voice: string | null }>) => void,
     ) => {

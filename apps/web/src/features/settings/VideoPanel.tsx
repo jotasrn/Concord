@@ -161,9 +161,7 @@ export function VideoPanel() {
             style={{ transform: 'scaleX(-1)' }}
           />
         </div>
-        {real && (
-          <p className="text-right font-mono text-[10px] text-ink-400">entregue: {real}</p>
-        )}
+        {real && <p className="text-right font-mono text-[10px] text-ink-400">entregue: {real}</p>}
       </section>
 
       <section className="grid grid-cols-2 gap-3">

@@ -90,16 +90,12 @@ export function SourcePicker({
               key={id}
               onClick={() => setAba(id)}
               className={`flex items-center gap-2 rounded-t-lg px-4 py-2 text-xs font-semibold transition ${
-                aba === id
-                  ? 'bg-void-800 text-violet-300'
-                  : 'text-ink-400 hover:text-ink-200'
+                aba === id ? 'bg-void-800 text-violet-300' : 'text-ink-400 hover:text-ink-200'
               }`}
             >
               <Icon className="h-3.5 w-3.5" />
               {label}
-              <span className="text-ink-400">
-                {sources.filter((s) => s.kind === id).length}
-              </span>
+              <span className="text-ink-400">{sources.filter((s) => s.kind === id).length}</span>
             </button>
           ))}
         </div>
@@ -234,10 +230,7 @@ export function SourcePicker({
             <Button variant="ghost" onClick={onCancel}>
               Cancelar
             </Button>
-            <Button
-              disabled={!selected}
-              onClick={() => selected && onStart(selected, quality)}
-            >
+            <Button disabled={!selected} onClick={() => selected && onStart(selected, quality)}>
               Transmitir
             </Button>
           </div>

@@ -93,9 +93,7 @@ export class ScreenShareEngine {
     // Audio do sistema so funciona capturando uma tela inteira; para uma
     // janela isolada o Chromium nao expoe o loopback.
     const wantsAudio = quality.systemAudio && source.kind === 'screen';
-    const audio = wantsAudio
-      ? { mandatory: { chromeMediaSource: 'desktop' } }
-      : false;
+    const audio = wantsAudio ? { mandatory: { chromeMediaSource: 'desktop' } } : false;
 
     let stream: MediaStream;
     try {

@@ -117,7 +117,12 @@ export function Avatar({
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       {src ? (
-        <img src={src} alt="" draggable={false} className="h-full w-full rounded-full object-cover" />
+        <img
+          src={src}
+          alt=""
+          draggable={false}
+          className="h-full w-full rounded-full object-cover"
+        />
       ) : (
         <div
           className="flex h-full w-full items-center justify-center rounded-full font-bold text-white"

@@ -24,12 +24,8 @@ export async function listAudioDevices(): Promise<{
   });
 
   return {
-    inputs: devices
-      .filter((d) => d.kind === 'audioinput')
-      .map((d, i) => map(d, i, 'Microfone')),
-    outputs: devices
-      .filter((d) => d.kind === 'audiooutput')
-      .map((d, i) => map(d, i, 'Saida')),
+    inputs: devices.filter((d) => d.kind === 'audioinput').map((d, i) => map(d, i, 'Microfone')),
+    outputs: devices.filter((d) => d.kind === 'audiooutput').map((d, i) => map(d, i, 'Saida')),
     labelsAvailable,
   };
 }

@@ -27,7 +27,10 @@ export class Session {
     private readonly dataDir: string,
     private readonly onOpsReceived: (serverId: string) => void,
     private readonly onVoiceSignal: (serverId: string, signal: unknown) => void = () => {},
-    private readonly onMigration: (info: { migrados: number; semChave: string[] }) => void = () => {},
+    private readonly onMigration: (info: {
+      migrados: number;
+      semChave: string[];
+    }) => void = () => {},
     private readonly onPresence: (
       snapshot: Record<string, { status: string; voice: string | null }>,
     ) => void = () => {},
@@ -128,79 +131,89 @@ export class Session {
     this.node.on('presence:update', (snapshot) => this.onPresence(snapshot));
 
     // Pedido de amizade recebido: guarda como pendente e avisa a interface.
-    this.node.on('friend:request', (r: { from: string; displayName: string; avatar: string | null }) => {
-      const store = this.requireStore();
-      const estado = store.social.upsertFriend(r.from, r.displayName, r.avatar, 'PENDING_IN');
-      this.onSocial('friend:request', { ...r, state: estado });
-    });
+    this.node.on(
+      'friend:request',
+      (r: { from: string; displayName: string; avatar: string | null }) => {
+        const store = this.requireStore();
+        const estado = store.social.upsertFriend(r.from, r.displayName, r.avatar, 'PENDING_IN');
+        this.onSocial('friend:request', { ...r, state: estado });
+      },
+    );
 
-    this.node.on('friend:response', (r: { from: string; accepted: boolean; displayName: string }) => {
-      const store = this.requireStore();
-      /*
-       * So vira amizade se HAVIA um pedido nosso em aberto. Sem esta
-       * checagem, um estranho podia mandar friend:response{accepted:true}
-       * do nada e virar "amigo aceito" na nossa lista, sem nunca termos
-       * pedido nada - a amizade e o que da acesso a convite de servidor e a
-       * chamada direta, entao isso nao e so um registro errado, e uma porta
-       * de entrada.
-       */
-      const pendente = store.social.getFriend(r.from);
-      if (pendente?.state !== 'PENDING_OUT') {
-        return;
-      }
-      if (r.accepted) {
-        store.social.upsertFriend(r.from, r.displayName, null, 'ACCEPTED');
-      } else {
-        // Recusa apaga o pendente: manter aumentaria a confusao sem utilidade.
-        store.social.removeFriend(r.from);
-      }
-      this.onSocial('friend:response', r);
-    });
+    this.node.on(
+      'friend:response',
+      (r: { from: string; accepted: boolean; displayName: string }) => {
+        const store = this.requireStore();
+        /*
+         * So vira amizade se HAVIA um pedido nosso em aberto. Sem esta
+         * checagem, um estranho podia mandar friend:response{accepted:true}
+         * do nada e virar "amigo aceito" na nossa lista, sem nunca termos
+         * pedido nada - a amizade e o que da acesso a convite de servidor e a
+         * chamada direta, entao isso nao e so um registro errado, e uma porta
+         * de entrada.
+         */
+        const pendente = store.social.getFriend(r.from);
+        if (pendente?.state !== 'PENDING_OUT') {
+          return;
+        }
+        if (r.accepted) {
+          store.social.upsertFriend(r.from, r.displayName, null, 'ACCEPTED');
+        } else {
+          // Recusa apaga o pendente: manter aumentaria a confusao sem utilidade.
+          store.social.removeFriend(r.from);
+        }
+        this.onSocial('friend:response', r);
+      },
+    );
 
-    this.node.on('invite:offer', (r: { from: string; serverId: string; serverName: string; code: string }) => {
-      const store = this.requireStore();
-      // Ja participa: nao ha o que aceitar.
-      if (store.serverKey(r.serverId)) return;
-      store.social.addPendingInvite({
-        serverId: r.serverId,
-        serverName: r.serverName,
-        fromKey: r.from,
-        code: r.code,
-      });
-      this.onSocial('invite:offer', r);
-    });
+    this.node.on(
+      'invite:offer',
+      (r: { from: string; serverId: string; serverName: string; code: string }) => {
+        const store = this.requireStore();
+        // Ja participa: nao ha o que aceitar.
+        if (store.serverKey(r.serverId)) return;
+        store.social.addPendingInvite({
+          serverId: r.serverId,
+          serverName: r.serverName,
+          fromKey: r.from,
+          code: r.code,
+        });
+        this.onSocial('invite:offer', r);
+      },
+    );
 
     // Chamada direta: os quatro eventos de controle vao para o mesmo canal
     // social que ja alimenta os popups de amizade e convite - a interface so
     // precisa ouvir um lugar so. A sinalizacao WebRTC (muito mais frequente)
     // tem um canal proprio, no mesmo padrao do voice:signal de servidor.
-    this.node.on('call:invite', (r: { from: string; callId: string; displayName: string; avatar: string | null }) => {
-      /*
-       * So toca o telefone para quem ja e amigo aceito.
-       *
-       * A chave publica de alguem e suficiente para descobrir o IP dela pela
-       * DHT (ja documentado em SECURITY.md) - sem esta checagem, qualquer
-       * estranho que soubesse sua chave conseguia abrir a tela cheia de
-       * chamada recebida na sua interface, com o nome que quisesse digitar.
-       * Recusa em silencio, sem nem mostrar o popup: quem ligou recebe um
-       * decline normal, nao fica esperando.
-       */
-      const amigo = this.requireStore().social.getFriend(r.from);
-      if (amigo?.state !== 'ACCEPTED') {
-        void this.node?.callRespond(r.from, r.callId, false).catch(() => undefined);
-        return;
-      }
-      this.onSocial('call:invite', r);
-    });
+    this.node.on(
+      'call:invite',
+      (r: { from: string; callId: string; displayName: string; avatar: string | null }) => {
+        /*
+         * So toca o telefone para quem ja e amigo aceito.
+         *
+         * A chave publica de alguem e suficiente para descobrir o IP dela pela
+         * DHT (ja documentado em SECURITY.md) - sem esta checagem, qualquer
+         * estranho que soubesse sua chave conseguia abrir a tela cheia de
+         * chamada recebida na sua interface, com o nome que quisesse digitar.
+         * Recusa em silencio, sem nem mostrar o popup: quem ligou recebe um
+         * decline normal, nao fica esperando.
+         */
+        const amigo = this.requireStore().social.getFriend(r.from);
+        if (amigo?.state !== 'ACCEPTED') {
+          void this.node?.callRespond(r.from, r.callId, false).catch(() => undefined);
+          return;
+        }
+        this.onSocial('call:invite', r);
+      },
+    );
     this.node.on('call:accept', (r: { from: string; callId: string }) =>
       this.onSocial('call:accept', r),
     );
     this.node.on('call:decline', (r: { from: string; callId: string }) =>
       this.onSocial('call:decline', r),
     );
-    this.node.on('call:end', (r: { from: string; callId: string }) =>
-      this.onSocial('call:end', r),
-    );
+    this.node.on('call:end', (r: { from: string; callId: string }) => this.onSocial('call:end', r));
     this.node.on('call:signal', ({ callId, signal }: { callId: string; signal: unknown }) =>
       this.onCallSignal(callId, signal),
     );
@@ -263,7 +276,9 @@ export class Session {
 
   /** Servidores que ainda nao conseguem sincronizar por falta de chave. */
   serversWithoutKey(): string[] {
-    return this.requireStore().serversWithoutKey().map((s) => s.name);
+    return this.requireStore()
+      .serversWithoutKey()
+      .map((s) => s.name);
   }
 
   /** Publica o perfil e empurra para os peers de cada servidor afetado. */
@@ -337,7 +352,13 @@ export class Session {
 
   async respondFriendRequest(targetKey: string, accepted: boolean): Promise<void> {
     const store = this.requireStore();
-    if (accepted) store.social.upsertFriend(targetKey, store.social.getFriend(targetKey)?.displayName ?? '', null, 'ACCEPTED');
+    if (accepted)
+      store.social.upsertFriend(
+        targetKey,
+        store.social.getFriend(targetKey)?.displayName ?? '',
+        null,
+        'ACCEPTED',
+      );
     else store.social.removeFriend(targetKey);
 
     const perfil = store.profileOf(store.publicKeyHex);
@@ -383,10 +404,7 @@ export class Session {
 
   // ---------- chamada direta ----------
 
-  async callInvite(
-    targetKey: string,
-    callId: string,
-  ): Promise<'entregue' | 'na-fila'> {
+  async callInvite(targetKey: string, callId: string): Promise<'entregue' | 'na-fila'> {
     const store = this.requireStore();
     const perfil = store.profileOf(store.publicKeyHex);
     return this.requireNode().callInvite(

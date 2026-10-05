@@ -79,7 +79,11 @@ test('membro com a chave do servidor nao toma o servidor com server.create forja
   assert.equal(servidor!.name, 'Squad', 'o nome nao pode ter sido trocado');
 
   const dono_ = store.listMembers(serverId).find((m) => m.userKey === toHex(dono.publicKey));
-  assert.equal(dono_?.permissions, String(Permission.ADMINISTRATOR), 'o dono continua administrador');
+  assert.equal(
+    dono_?.permissions,
+    String(Permission.ADMINISTRATOR),
+    'o dono continua administrador',
+  );
 
   store.close();
 });
@@ -235,7 +239,10 @@ test('dois servidores nao conseguem colidir no mesmo channelId', () => {
   store.applyRemoteOperations([colisao]);
 
   // Nao pode ter criado canal nenhum em A com esse id.
-  assert.equal(store.listChannels(serverA).some((c) => c.id === canalB), false);
+  assert.equal(
+    store.listChannels(serverA).some((c) => c.id === canalB),
+    false,
+  );
   // E o canal de B continua intacto e pertencendo a B.
   assert.ok(store.listChannels(serverB).some((c) => c.id === canalB));
 
@@ -255,7 +262,11 @@ test('operacao com servidor diferente do envelope nao e aplicada (defesa em prof
   const envelopeServerId = serverA; // chegou pelo canal de A
 
   const filtradas = [opParaB].filter((op) => op.serverId === envelopeServerId);
-  assert.equal(filtradas.length, 0, 'operacao de B nunca deveria ser processada vinda do canal de A');
+  assert.equal(
+    filtradas.length,
+    0,
+    'operacao de B nunca deveria ser processada vinda do canal de A',
+  );
 
   store.close();
 });

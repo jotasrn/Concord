@@ -166,8 +166,7 @@ export class RemoteAudioMixer {
   }
 
   private aplicar(_peerKey: string, peer: PeerAudio): void {
-    const alvo =
-      peer.moderationMuted || peer.localMuted || this.deafened ? 0 : peer.volume;
+    const alvo = peer.moderationMuted || peer.localMuted || this.deafened ? 0 : peer.volume;
 
     if (alvo <= 1) {
       this.desligarReforco(peer);

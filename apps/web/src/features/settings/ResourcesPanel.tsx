@@ -42,7 +42,10 @@ export function ResourcesPanel() {
         setMaquina(r.machine);
       })
       .catch((e) => setError(String(e)));
-    void window.concord.settings.usage().then(setUso).catch(() => undefined);
+    void window.concord.settings
+      .usage()
+      .then(setUso)
+      .catch(() => undefined);
   }, []);
 
   async function alterar(patch: Partial<Recursos>) {
@@ -87,8 +90,8 @@ export function ResourcesPanel() {
       <ErrorBanner message={error} />
 
       <p className="text-[11px] text-ink-400">
-        Sua maquina: {maquina.cores} nucleos &bull;{' '}
-        {(maquina.totalMemoryMb / 1024).toFixed(1)} GB de RAM
+        Sua maquina: {maquina.cores} nucleos &bull; {(maquina.totalMemoryMb / 1024).toFixed(1)} GB
+        de RAM
       </p>
 
       {/* Memoria */}
@@ -170,8 +173,8 @@ export function ResourcesPanel() {
           ))}
         </div>
         <p className="text-[11px] text-ink-400">
-          Remove mensagens antigas deste dispositivo. Canais, membros e permissoes ficam intactos.
-          O que for removido aqui nao volta pela sincronizacao, mas continua com quem ainda tiver a
+          Remove mensagens antigas deste dispositivo. Canais, membros e permissoes ficam intactos. O
+          que for removido aqui nao volta pela sincronizacao, mas continua com quem ainda tiver a
           copia.
         </p>
       </section>
@@ -182,11 +185,11 @@ export function ResourcesPanel() {
           <ShieldCheck className="h-3.5 w-3.5" /> Firewall do Windows
         </label>
         <p className="text-[11px] text-ink-400">
-          Na primeira execucao o Windows pode pedir permissao de rede, com aviso de
-          administrador. <span className="text-ink-200">Voce pode recusar sem problema.</span> A
-          conexao entre voces e feita por furo de NAT: os dois lados abrem a conversa de dentro
-          para fora, e o firewall libera a resposta automaticamente. A permissao so serviria para
-          receber conexoes nao solicitadas, que o app nao usa.
+          Na primeira execucao o Windows pode pedir permissao de rede, com aviso de administrador.{' '}
+          <span className="text-ink-200">Voce pode recusar sem problema.</span> A conexao entre
+          voces e feita por furo de NAT: os dois lados abrem a conversa de dentro para fora, e o
+          firewall libera a resposta automaticamente. A permissao so serviria para receber conexoes
+          nao solicitadas, que o app nao usa.
         </p>
       </section>
 
@@ -206,8 +209,8 @@ export function ResourcesPanel() {
           Continuar rodando ao fechar a janela
         </label>
         <p className="text-[11px] text-ink-400">
-          O app fica na bandeja, mantendo a sincronizacao e as chamadas. Para encerrar de vez, use
-          o menu do icone na bandeja.
+          O app fica na bandeja, mantendo a sincronizacao e as chamadas. Para encerrar de vez, use o
+          menu do icone na bandeja.
         </p>
 
         <label className="flex items-center gap-2 text-sm text-ink-200">

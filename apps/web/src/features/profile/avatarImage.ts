@@ -37,7 +37,11 @@ export async function prepareAvatar(file: File): Promise<string> {
 
     // Fotos com muito detalhe podem passar do teto mesmo em 128px; baixa a
     // qualidade em vez de recusar o arquivo.
-    for (let qualidade = 0.7; dataUrl.length > MAX_DATA_URL && qualidade >= 0.4; qualidade -= 0.15) {
+    for (
+      let qualidade = 0.7;
+      dataUrl.length > MAX_DATA_URL && qualidade >= 0.4;
+      qualidade -= 0.15
+    ) {
       dataUrl = canvas.toDataURL('image/jpeg', qualidade);
     }
 

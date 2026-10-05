@@ -75,7 +75,10 @@ export class StatsReader {
     let packetsReceived = 0;
     let packetsLost = 0;
     let codecId: string | null = null;
-    const codecs = new Map<string, RTCStats & { mimeType?: string; clockRate?: number; channels?: number }>();
+    const codecs = new Map<
+      string,
+      RTCStats & { mimeType?: string; clockRate?: number; channels?: number }
+    >();
 
     report.forEach((entry) => {
       if (entry.type === 'codec') {
@@ -107,8 +110,7 @@ export class StatsReader {
 
     if (codecId) {
       const codec = codecs.get(codecId) as
-        | { mimeType?: string; clockRate?: number; channels?: number }
-        | undefined;
+        { mimeType?: string; clockRate?: number; channels?: number } | undefined;
       if (codec) {
         stats.codec = codec.mimeType?.replace('audio/', '') ?? null;
         stats.sampleRate = codec.clockRate ?? null;
@@ -160,8 +162,7 @@ export class StatsReader {
       stats.fps = stat.framesPerSecond !== undefined ? Number(stat.framesPerSecond) : null;
       stats.limitation =
         typeof stat.qualityLimitationReason === 'string' ? stat.qualityLimitationReason : null;
-      stats.framesDropped =
-        stat.framesDropped !== undefined ? Number(stat.framesDropped) : null;
+      stats.framesDropped = stat.framesDropped !== undefined ? Number(stat.framesDropped) : null;
 
       if (typeof stat.codecId === 'string') {
         stats.codec = codecs.get(stat.codecId)?.mimeType?.replace('video/', '') ?? null;

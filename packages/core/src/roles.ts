@@ -57,7 +57,11 @@ export const PERMISSION_LIST: { flag: Permission; label: string; hint: string }[
   { flag: Permission.SPEAK, label: 'Falar', hint: 'Transmitir audio na call' },
   { flag: Permission.STREAM, label: 'Compartilhar tela', hint: 'Transmitir a tela' },
   { flag: Permission.MANAGE_CHANNELS, label: 'Gerenciar canais', hint: 'Criar, renomear, apagar' },
-  { flag: Permission.MANAGE_MEMBERS, label: 'Gerenciar membros', hint: 'Apelido, cargo, silenciar' },
+  {
+    flag: Permission.MANAGE_MEMBERS,
+    label: 'Gerenciar membros',
+    hint: 'Apelido, cargo, silenciar',
+  },
   { flag: Permission.KICK_MEMBERS, label: 'Expulsar', hint: 'Remover do servidor' },
   { flag: Permission.MANAGE_SERVER, label: 'Gerenciar servidor', hint: 'Nome e icone' },
   { flag: Permission.ADMINISTRATOR, label: 'Administrador', hint: 'Concede tudo acima' },

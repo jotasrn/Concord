@@ -28,26 +28,32 @@ let appSession: SessionType | null = null;
 /** Import tardio: uma falha ao carregar o core chega ao log em vez de matar o app. */
 function createSession(): SessionType {
   const { Session } = require('./session') as typeof import('./session');
-  return new Session(join(app.getPath('userData'), 'data'), (serverId) => {
-    // Operacoes chegaram de um peer: avisa a UI para recarregar aquele servidor.
-    window?.webContents.send('sync:updated', serverId);
-  },
-  (serverId, signal) => {
-    window?.webContents.send('voice:incoming', serverId, signal);
-  },
-  (info) => {
-    log('info', `migracao de chaves: ${info.migrados} gerada(s), ${info.semChave.length} sem chave`);
-    window?.webContents.send('migration:notice', info);
-  },
-  (snapshot) => {
-    window?.webContents.send('presence:update', snapshot);
-  },
-  (evento, dados) => {
-    window?.webContents.send('social:event', evento, dados);
-  },
-  (callId, signal) => {
-    window?.webContents.send('call:incoming-signal', callId, signal);
-  });
+  return new Session(
+    join(app.getPath('userData'), 'data'),
+    (serverId) => {
+      // Operacoes chegaram de um peer: avisa a UI para recarregar aquele servidor.
+      window?.webContents.send('sync:updated', serverId);
+    },
+    (serverId, signal) => {
+      window?.webContents.send('voice:incoming', serverId, signal);
+    },
+    (info) => {
+      log(
+        'info',
+        `migracao de chaves: ${info.migrados} gerada(s), ${info.semChave.length} sem chave`,
+      );
+      window?.webContents.send('migration:notice', info);
+    },
+    (snapshot) => {
+      window?.webContents.send('presence:update', snapshot);
+    },
+    (evento, dados) => {
+      window?.webContents.send('social:event', evento, dados);
+    },
+    (callId, signal) => {
+      window?.webContents.send('call:incoming-signal', callId, signal);
+    },
+  );
 }
 
 function createWindow(): void {
@@ -200,10 +206,15 @@ if (!app.requestSingleInstanceLock()) {
       appSession = createSession();
       // O estado da chamada interessa a dois modulos: a bandeja (bloqueio de
       // suspensao) e o updater (nao reiniciar no meio de uma call).
-      registerIpc(appSession, () => window, app.getPath('userData'), (active) => {
-        setCallActive(active);
-        noteCallActive(active);
-      });
+      registerIpc(
+        appSession,
+        () => window,
+        app.getPath('userData'),
+        (active) => {
+          setCallActive(active);
+          noteCallActive(active);
+        },
+      );
       createWindow();
       setupTray(() => window);
       initUpdater(() => window);

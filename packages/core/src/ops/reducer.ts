@@ -221,8 +221,7 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
       if (!hasPerm(perms, Permission.MANAGE_MEMBERS)) return 'sem MANAGE_MEMBERS';
 
       const server = db.prepare('SELECT owner_key FROM servers WHERE id = ?').get(op.serverId) as
-        | { owner_key: string }
-        | undefined;
+        { owner_key: string } | undefined;
       // O dono nunca pode ser rebaixado, nem por um admin.
       if (server?.owner_key === p.userKey) return 'o dono nao pode ser rebaixado';
 
@@ -275,8 +274,7 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
       if (!hasPerm(perms, Permission.KICK_MEMBERS)) return 'sem KICK_MEMBERS';
 
       const server = db.prepare('SELECT owner_key FROM servers WHERE id = ?').get(op.serverId) as
-        | { owner_key: string }
-        | undefined;
+        { owner_key: string } | undefined;
       // O dono nao pode ser expulso do proprio servidor.
       if (server?.owner_key === p.userKey) return 'o dono nao pode ser expulso';
       if (p.userKey === op.authorKey) return 'use sair do servidor';
@@ -300,8 +298,7 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
       if (!hasPerm(perms, Permission.MANAGE_MEMBERS)) return 'sem MANAGE_MEMBERS';
 
       const server = db.prepare('SELECT owner_key FROM servers WHERE id = ?').get(op.serverId) as
-        | { owner_key: string }
-        | undefined;
+        { owner_key: string } | undefined;
       if (server?.owner_key === p.userKey) return 'o dono nao pode ser silenciado';
 
       const permsDoAlvo = memberPermissions(db, op.serverId, p.userKey);
@@ -343,9 +340,8 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
       if (!perms) return 'autor nao e membro';
       if (!hasPerm(perms, Permission.MANAGE_CHANNELS)) return 'sem MANAGE_CHANNELS';
 
-      const channel = db
-        .prepare('SELECT server_id FROM channels WHERE id = ?')
-        .get(p.channelId) as { server_id: string } | undefined;
+      const channel = db.prepare('SELECT server_id FROM channels WHERE id = ?').get(p.channelId) as
+        { server_id: string } | undefined;
       if (!channel) return 'canal desconhecido';
       if (channel.server_id !== op.serverId) return 'canal e de outro servidor';
 
@@ -410,9 +406,7 @@ function applyOne(db: Db, op: Operation, vault: Vault): string | null {
       const p = op.payload as MessageEditPayload;
       const msg = db
         .prepare('SELECT author_key, server_id, deleted FROM messages WHERE id = ?')
-        .get(p.messageId) as
-        | { author_key: string; server_id: string; deleted: number }
-        | undefined;
+        .get(p.messageId) as { author_key: string; server_id: string; deleted: number } | undefined;
       if (!msg) return 'mensagem desconhecida';
       /*
        * Mensagens tem id global (UUID), mas uma operacao so vale dentro do

@@ -205,8 +205,8 @@ export function AudioSettingsPanel() {
         </div>
         {mode === 'push-to-talk' && (
           <p className="text-[11px] text-ink-400">
-            Segure a tecla configurada para transmitir. A captura da tecla entra junto com a
-            chamada de voz.
+            Segure a tecla configurada para transmitir. A captura da tecla entra junto com a chamada
+            de voz.
           </p>
         )}
       </section>

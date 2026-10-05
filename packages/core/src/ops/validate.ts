@@ -33,7 +33,9 @@ function isString(value: unknown, max: number): boolean {
 }
 
 function isOptionalString(value: unknown, max: number): boolean {
-  return value === null || value === undefined || (typeof value === 'string' && value.length <= max);
+  return (
+    value === null || value === undefined || (typeof value === 'string' && value.length <= max)
+  );
 }
 
 function isPublicKey(value: unknown): boolean {
@@ -156,7 +158,9 @@ const MAX_COUNTER = 2 ** 31;
 
 /** Inteiro seguro, nao negativo e dentro do teto. */
 function isSaneCounter(value: unknown): boolean {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value < MAX_COUNTER;
+  return (
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value < MAX_COUNTER
+  );
 }
 
 /**
@@ -166,7 +170,9 @@ function isSaneCounter(value: unknown): boolean {
  */
 const MAX_TIMESTAMP = 4_102_444_800_000; // ano 2100
 function isSaneTimestamp(value: unknown): boolean {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value < MAX_TIMESTAMP;
+  return (
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value < MAX_TIMESTAMP
+  );
 }
 
 /**

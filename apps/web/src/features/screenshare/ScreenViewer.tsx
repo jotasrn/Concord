@@ -66,13 +66,7 @@ function useInboundStats(video: HTMLVideoElement | null, active: boolean) {
   return stats;
 }
 
-function Viewer({
-  screen,
-  onClose,
-}: {
-  screen: RemoteScreen;
-  onClose: () => void;
-}) {
+function Viewer({ screen, onClose }: { screen: RemoteScreen; onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);

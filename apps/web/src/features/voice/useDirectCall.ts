@@ -19,12 +19,7 @@ import { ScreenQuality } from '../screenshare/presets';
  */
 
 export type DirectCallPhase =
-  | 'idle'
-  | 'ringing-out'
-  | 'ringing-in'
-  | 'connecting'
-  | 'active'
-  | 'ended';
+  'idle' | 'ringing-out' | 'ringing-in' | 'connecting' | 'active' | 'ended';
 
 export interface DirectCallState {
   phase: DirectCallPhase;
@@ -105,67 +100,70 @@ export function useDirectCall(selfKey: string, ocupado: () => boolean) {
   );
 
   /** Cria o motor de audio e o transporte, e conecta. Comum a quem liga e a quem atende. */
-  const iniciarMidia = useCallback(async (peerKey: string, callId: string) => {
-    const perfil = LATENCY_PROFILES.ultra;
-    const engine = new AudioEngine({
-      transmitMode: 'voice-activity',
-      eqPreset: 'voice',
-      useCompressor: perfil.useCompressor,
-      vad: { attackMs: perfil.vadAttackMs },
-    });
-    await engine.start();
-    engine.subscribe((audio) => setState((s) => ({ ...s, audio })));
-    engineRef.current = engine;
+  const iniciarMidia = useCallback(
+    async (peerKey: string, callId: string) => {
+      const perfil = LATENCY_PROFILES.ultra;
+      const engine = new AudioEngine({
+        transmitMode: 'voice-activity',
+        eqPreset: 'voice',
+        useCompressor: perfil.useCompressor,
+        vad: { attackMs: perfil.vadAttackMs },
+      });
+      await engine.start();
+      engine.subscribe((audio) => setState((s) => ({ ...s, audio })));
+      engineRef.current = engine;
 
-    const track = engine.getProcessedTrack();
-    if (!track) throw new Error('Nao foi possivel obter a faixa de audio processada');
+      const track = engine.getProcessedTrack();
+      if (!track) throw new Error('Nao foi possivel obter a faixa de audio processada');
 
-    let ultimaFala = 0;
-    const transport = new PeerToPeerTransport(
-      selfKey,
-      (signal) => void window.concord.calls.signal(peerKey, signal),
-      {
-        onAudio: (_peerKey, stream) => {
-          mixerRef.current.attach(peerKey, stream);
+      let ultimaFala = 0;
+      const transport = new PeerToPeerTransport(
+        selfKey,
+        (signal) => void window.concord.calls.signal(peerKey, signal),
+        {
+          onAudio: (_peerKey, stream) => {
+            mixerRef.current.attach(peerKey, stream);
+          },
+          onScreen: (_peerKey, stream) => {
+            setState((s) => ({ ...s, remoteScreen: stream }));
+          },
+          onScreenPaused: (_peerKey, paused) => {
+            setState((s) => ({ ...s, screenPaused: paused }));
+          },
+          onPeerLeft: () => finalizar('a pessoa encerrou'),
+          onConnectionChange: (_peerKey, connection) => {
+            setState((s) => ({ ...s, connection }));
+          },
         },
-        onScreen: (_peerKey, stream) => {
-          setState((s) => ({ ...s, remoteScreen: stream }));
-        },
-        onScreenPaused: (_peerKey, paused) => {
-          setState((s) => ({ ...s, screenPaused: paused }));
-        },
-        onPeerLeft: () => finalizar('a pessoa encerrou'),
-        onConnectionChange: (_peerKey, connection) => {
-          setState((s) => ({ ...s, connection }));
-        },
-      },
-    );
-    transportRef.current = transport;
-    transport.setLatencyProfile(perfil);
-    await transport.connect(callId, track);
+      );
+      transportRef.current = transport;
+      transport.setLatencyProfile(perfil);
+      await transport.connect(callId, track);
 
-    // Nivel de audio remoto -> ring de "esta falando", mesma logica das calls de canal.
-    const LIMIAR = 0.02;
-    const HISTERESE_MS = 300;
-    const nivelId = setInterval(() => {
-      const nivel = transport.audioLevels().get(peerKey) ?? 0;
-      if (nivel >= LIMIAR) ultimaFala = Date.now();
-      const falando = Date.now() - ultimaFala < HISTERESE_MS;
-      setState((s) => (s.peerSpeaking === falando ? s : { ...s, peerSpeaking: falando }));
-    }, 150);
-    // Guardado no proprio timeout ref de limpeza generica via disconnect: como
-    // nao ha um "peers.clear" aqui (so existe 1 peer), o intervalo e limpo
-    // junto do transporte ao desconectar.
-    const disconnectOriginal = transport.disconnect.bind(transport);
-    transport.disconnect = async () => {
-      clearInterval(nivelId);
-      await disconnectOriginal();
-    };
+      // Nivel de audio remoto -> ring de "esta falando", mesma logica das calls de canal.
+      const LIMIAR = 0.02;
+      const HISTERESE_MS = 300;
+      const nivelId = setInterval(() => {
+        const nivel = transport.audioLevels().get(peerKey) ?? 0;
+        if (nivel >= LIMIAR) ultimaFala = Date.now();
+        const falando = Date.now() - ultimaFala < HISTERESE_MS;
+        setState((s) => (s.peerSpeaking === falando ? s : { ...s, peerSpeaking: falando }));
+      }, 150);
+      // Guardado no proprio timeout ref de limpeza generica via disconnect: como
+      // nao ha um "peers.clear" aqui (so existe 1 peer), o intervalo e limpo
+      // junto do transporte ao desconectar.
+      const disconnectOriginal = transport.disconnect.bind(transport);
+      transport.disconnect = async () => {
+        clearInterval(nivelId);
+        await disconnectOriginal();
+      };
 
-    void window.concord.settings.setCallActive(true).catch(() => undefined);
-    void window.concord.presence.setVoiceChannel(`dm:${callId}`).catch(() => undefined);
-    setState((s) => ({ ...s, phase: 'active', connection: 'new', joinedAt: Date.now() }));
-  }, [selfKey, finalizar]);
+      void window.concord.settings.setCallActive(true).catch(() => undefined);
+      void window.concord.presence.setVoiceChannel(`dm:${callId}`).catch(() => undefined);
+      setState((s) => ({ ...s, phase: 'active', connection: 'new', joinedAt: Date.now() }));
+    },
+    [selfKey, finalizar],
+  );
 
   /** Liga para um amigo. Nao pede microfone ainda - so depois que ele aceitar. */
   const call = useCallback(
@@ -228,7 +226,8 @@ export function useDirectCall(selfKey: string, ocupado: () => boolean) {
   /** Recusa a chamada que esta tocando. */
   const decline = useCallback(() => {
     const { callId, peerKey } = stateRef.current;
-    if (callId && peerKey) void window.concord.calls.respond(peerKey, callId, false).catch(() => undefined);
+    if (callId && peerKey)
+      void window.concord.calls.respond(peerKey, callId, false).catch(() => undefined);
     finalizar(null);
   }, [finalizar]);
 
@@ -246,7 +245,12 @@ export function useDirectCall(selfKey: string, ocupado: () => boolean) {
   // chega pelo mesmo canal social que ja alimenta pedidos de amizade.
   useEffect(() => {
     return window.concord.onSocialEvent((evento, dados) => {
-      const d = dados as { from: string; callId: string; displayName?: string; avatar?: string | null };
+      const d = dados as {
+        from: string;
+        callId: string;
+        displayName?: string;
+        avatar?: string | null;
+      };
 
       if (evento === 'call:invite') {
         // Ja em outra chamada (de servidor ou direta): recusa educadamente sem
@@ -346,7 +350,13 @@ export function useDirectCall(selfKey: string, ocupado: () => boolean) {
     await transportRef.current?.removeVideoTrack();
     await screenRef.current.stop();
     sounds.play('screenStop');
-    setState((s) => ({ ...s, screenSharing: false, screenPaused: false, capture: null, localScreen: null }));
+    setState((s) => ({
+      ...s,
+      screenSharing: false,
+      screenPaused: false,
+      capture: null,
+      localScreen: null,
+    }));
   }, []);
 
   useEffect(() => () => limpar(), [limpar]);
@@ -363,7 +373,8 @@ export function useDirectCall(selfKey: string, ocupado: () => boolean) {
     stopScreenShare,
     peerVolume: () => (state.peerKey ? mixerRef.current.volumeDe(state.peerKey) : 1),
     setPeerVolume: (volume: number) => {
-      if (state.peerKey) mixerRef.current.setVolume(state.peerKey, Math.min(VOLUME_MAXIMO, Math.max(0, volume)));
+      if (state.peerKey)
+        mixerRef.current.setVolume(state.peerKey, Math.min(VOLUME_MAXIMO, Math.max(0, volume)));
     },
   };
 }

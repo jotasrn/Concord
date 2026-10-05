@@ -1,7 +1,12 @@
 import { AudioLevels, AudioMeter } from './AudioMeter';
 import { EqPreset, Equalizer } from './Equalizer';
 import { NoiseSuppression, createNoiseSuppression } from './NoiseSuppression';
-import { DEFAULT_VAD_OPTIONS, VadOptions, VoiceActivityDetector, VoiceState } from './VoiceActivityDetector';
+import {
+  DEFAULT_VAD_OPTIONS,
+  VadOptions,
+  VoiceActivityDetector,
+  VoiceState,
+} from './VoiceActivityDetector';
 import {
   AudioCapabilities,
   AudioPreferences,
@@ -213,7 +218,6 @@ export class AudioEngine {
     };
     this.lastState = state;
     for (const listener of this.listeners) listener(state);
-
   };
 
   private shouldTransmit(voiceState: VoiceState): boolean {

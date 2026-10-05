@@ -60,7 +60,10 @@ export class P2PNode extends EventEmitter {
    * Status declarado por cada peer conectado. Some quando a conexao cai, que e
    * exatamente o significado de ficar offline: nao ha registro a manter.
    */
-  private readonly presence = new Map<string, { status: PresenceStatus; voice: string | null; at: number }>();
+  private readonly presence = new Map<
+    string,
+    { status: PresenceStatus; voice: string | null; at: number }
+  >();
   private myStatus: PresenceStatus = 'ONLINE';
   private myVoiceChannel: string | null = null;
 
@@ -146,15 +149,10 @@ export class P2PNode extends EventEmitter {
    * Sem essa espera, o convite poderia ser entregue a qualquer um que estivesse
    * ouvindo o topico - e o convite carrega a chave do servidor.
    */
-  async sendToUser(
-    targetPublicKey: string,
-    message: Message,
-  ): Promise<'entregue' | 'na-fila'> {
+  async sendToUser(targetPublicKey: string, message: Message): Promise<'entregue' | 'na-fila'> {
     if (!this.swarm) throw new Error('Rede nao iniciada');
 
-    const jaVerificado = [...this.peers.values()].find(
-      (p) => p.identityKey === targetPublicKey,
-    );
+    const jaVerificado = [...this.peers.values()].find((p) => p.identityKey === targetPublicKey);
     if (jaVerificado) {
       this.send(jaVerificado, message);
       return 'entregue';

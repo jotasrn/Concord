@@ -97,7 +97,10 @@ test('ciclo completo de sync reproduz o estado no outro peer', () => {
   const b = new ConcordStore(':memory:', pedro);
 
   // B anuncia que nao tem nada; A calcula o delta e envia.
-  const delta = operationsMissingFor(a.operationsFor(serverId), computeHeads(b.operationsFor(serverId)));
+  const delta = operationsMissingFor(
+    a.operationsFor(serverId),
+    computeHeads(b.operationsFor(serverId)),
+  );
   b.applyRemoteOperations(delta);
 
   assert.deepEqual(
@@ -118,7 +121,12 @@ test('ciclo completo de sync reproduz o estado no outro peer', () => {
 });
 
 test('parseVoiceSignal aceita sinal valido e descarta o from declarado', () => {
-  const s = parseVoiceSignal({ kind: 'offer', channelId: 'c1', from: 'forjado', data: { sdp: 'v=0' } });
+  const s = parseVoiceSignal({
+    kind: 'offer',
+    channelId: 'c1',
+    from: 'forjado',
+    data: { sdp: 'v=0' },
+  });
   assert.deepEqual(s, { kind: 'offer', from: '', channelId: 'c1', data: { sdp: 'v=0' } });
   const comDestino = parseVoiceSignal({ kind: 'ice', channelId: 'c1', to: 'a'.repeat(64) });
   assert.equal(comDestino?.to, 'a'.repeat(64));
@@ -132,7 +140,11 @@ test('parseVoiceSignal recusa formato errado, tipo desconhecido e payload gigant
   assert.equal(parseVoiceSignal({ kind: 'offer', channelId: 'x'.repeat(200) }), null);
   assert.equal(parseVoiceSignal({ kind: 'offer', channelId: 'c1', to: 'nao-hex' }), null);
   assert.equal(
-    parseVoiceSignal({ kind: 'offer', channelId: 'c1', data: 'x'.repeat(MAX_VOICE_SIGNAL_BYTES + 1) }),
+    parseVoiceSignal({
+      kind: 'offer',
+      channelId: 'c1',
+      data: 'x'.repeat(MAX_VOICE_SIGNAL_BYTES + 1),
+    }),
     null,
   );
   const circular: Record<string, unknown> = {};

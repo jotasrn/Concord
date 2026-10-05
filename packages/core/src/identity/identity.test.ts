@@ -29,7 +29,10 @@ test('frases diferentes geram identidades diferentes', () => {
 });
 
 test('frase invalida e rejeitada', () => {
-  assert.equal(isValidRecoveryPhrase('bora ranked com os amigos hoje a noite pessoal beleza'), false);
+  assert.equal(
+    isValidRecoveryPhrase('bora ranked com os amigos hoje a noite pessoal beleza'),
+    false,
+  );
   assert.throws(() => identityFromPhrase('frase totalmente invalida aqui', 'joao'));
 });
 
@@ -90,7 +93,10 @@ test('recuperar a conta em outra maquina so com a frase', () => {
   const recuperada = decryptKeystore(novaMaquina, 'outra-senha-diferente');
 
   assert.equal(toHex(recuperada.publicKey), toHex(original.publicKey));
-  assert.equal(formatHandle('joao', recuperada.publicKey), formatHandle('joao', original.publicKey));
+  assert.equal(
+    formatHandle('joao', recuperada.publicKey),
+    formatHandle('joao', original.publicKey),
+  );
 });
 
 test('o handle tem o formato nome#fingerprint', () => {

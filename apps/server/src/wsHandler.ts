@@ -6,13 +6,7 @@ import { join } from 'node:path';
 import { PERMISSION_LIST, ROLE_PRESETS, parseVoiceSignal } from '@concord/core';
 import { Session } from './session';
 import { deviceDir, ensureDir, isValidDeviceToken, removeIfEmpty } from './devices';
-import {
-  ConnectionLimiter,
-  LimitConfig,
-  UnlockGuard,
-  WindowRateLimiter,
-  clientIp,
-} from './limits';
+import { ConnectionLimiter, LimitConfig, UnlockGuard, WindowRateLimiter, clientIp } from './limits';
 
 type Reply<T> = { id: string; ok: true; data: T } | { id: string; ok: false; error: string };
 
@@ -46,7 +40,10 @@ interface Ativo {
  * aba derruba a primeira, em vez de abrir o mesmo SQLite duas vezes e subir
  * dois nos P2P com a mesma identidade.
  */
-export function createWsHandler(wss: WebSocketServer, opts: WsHandlerOptions): {
+export function createWsHandler(
+  wss: WebSocketServer,
+  opts: WsHandlerOptions,
+): {
   activeDirs: () => Set<string>;
 } {
   const { dataDir, limits } = opts;
@@ -195,7 +192,10 @@ interface Contexto {
 // ---------------------------------------------------------------------------
 // Rate-limit de mensagens (idêntico ao do IPC Electron)
 // ---------------------------------------------------------------------------
-interface RateBucket { count: number; resetAt: number; }
+interface RateBucket {
+  count: number;
+  resetAt: number;
+}
 const MESSAGE_LIMIT = 5;
 const MESSAGE_WINDOW_MS = 3_000;
 
@@ -401,9 +401,7 @@ async function dispatch(ctx: Contexto, channel: string, args: unknown[]): Promis
       const trimmed = sanitizeContent(content).trim();
       if (!trimmed) throw new Error('Mensagem vazia');
       if (trimmed.length > 4000) throw new Error('Mensagem muito longa');
-      return session.publish(sid, () =>
-        session.requireStore().sendMessage(sid, cid, trimmed),
-      );
+      return session.publish(sid, () => session.requireStore().sendMessage(sid, cid, trimmed));
     }
     case 'messages:delete': {
       const [serverId, messageId] = args as [string, string];
@@ -438,13 +436,19 @@ async function dispatch(ctx: Contexto, channel: string, args: unknown[]): Promis
 
     // --- perfil e presenca ---
     case 'profile:update': {
-      const [profile] = args as [{ displayName: string; avatar: string | null; bio: string | null }];
+      const [profile] = args as [
+        { displayName: string; avatar: string | null; bio: string | null },
+      ];
       const nome = profile.displayName?.trim();
       if (!nome) throw new Error('Escolha um nome de exibicao');
       if (nome.length > 64) throw new Error('Nome muito longo');
       if (profile.bio && profile.bio.length > 300) throw new Error('Biografia muito longa');
       if (profile.avatar && profile.avatar.length > 48_000) throw new Error('Imagem muito grande');
-      await session.updateProfile({ displayName: nome, avatar: profile.avatar ?? null, bio: profile.bio?.trim() || null });
+      await session.updateProfile({
+        displayName: nome,
+        avatar: profile.avatar ?? null,
+        bio: profile.bio?.trim() || null,
+      });
       return true;
     }
     case 'profile:get': {

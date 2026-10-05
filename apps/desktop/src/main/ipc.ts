@@ -96,13 +96,11 @@ export function registerIpc(
 
   ipcMain.handle('account:newPhrase', () => wrap(() => session.newRecoveryPhrase()));
 
-  ipcMain.handle(
-    'account:create',
-    (_e, displayName: string, password: string, phrase: string) =>
-      wrap(() => {
-        session.createAccount(displayName, password, phrase);
-        return true;
-      }),
+  ipcMain.handle('account:create', (_e, displayName: string, password: string, phrase: string) =>
+    wrap(() => {
+      session.createAccount(displayName, password, phrase);
+      return true;
+    }),
   );
 
   ipcMain.handle(
@@ -175,14 +173,10 @@ export function registerIpc(
     wrap(() => session.requireStore().listChannels(serverId)),
   );
 
-  ipcMain.handle(
-    'channels:create',
-    (_e, serverId: string, name: string, type: 'TEXT' | 'VOICE') =>
-      wrap(() =>
-        session.publish(serverId, () =>
-          session.requireStore().createChannel(serverId, name, type),
-        ),
-      ),
+  ipcMain.handle('channels:create', (_e, serverId: string, name: string, type: 'TEXT' | 'VOICE') =>
+    wrap(() =>
+      session.publish(serverId, () => session.requireStore().createChannel(serverId, name, type)),
+    ),
   );
 
   // ---------- mensagens ----------
@@ -191,20 +185,16 @@ export function registerIpc(
     wrap(() => session.requireStore().listMessages(channelId, limit ?? 50)),
   );
 
-  ipcMain.handle(
-    'messages:send',
-    (_e, serverId: string, channelId: string, content: string) =>
-      wrap(() => {
-        const sid = assertId(serverId, 'serverId');
-        const cid = assertId(channelId, 'channelId');
-        checkRateLimit(cid);
-        const trimmed = sanitizeContent(content).trim();
-        if (!trimmed) throw new Error('Mensagem vazia');
-        if (trimmed.length > 4000) throw new Error('Mensagem muito longa');
-        return session.publish(sid, () =>
-          session.requireStore().sendMessage(sid, cid, trimmed),
-        );
-      }),
+  ipcMain.handle('messages:send', (_e, serverId: string, channelId: string, content: string) =>
+    wrap(() => {
+      const sid = assertId(serverId, 'serverId');
+      const cid = assertId(channelId, 'channelId');
+      checkRateLimit(cid);
+      const trimmed = sanitizeContent(content).trim();
+      if (!trimmed) throw new Error('Mensagem vazia');
+      if (trimmed.length > 4000) throw new Error('Mensagem muito longa');
+      return session.publish(sid, () => session.requireStore().sendMessage(sid, cid, trimmed));
+    }),
   );
 
   ipcMain.handle('messages:delete', (_e, serverId: string, messageId: string) =>
@@ -252,9 +242,7 @@ export function registerVoiceAndInviteIpc(session: Session): void {
     wrap(() => session.createInvite(serverId)),
   );
 
-  ipcMain.handle('invites:accept', (_e, code: string) =>
-    wrap(() => session.acceptInvite(code)),
-  );
+  ipcMain.handle('invites:accept', (_e, code: string) => wrap(() => session.acceptInvite(code)));
 }
 
 /**
@@ -285,9 +273,10 @@ export function registerScreenIpc(): void {
           kind: source.id.startsWith('screen:') ? ('screen' as const) : ('window' as const),
           // JPEG em vez de PNG: mesma miniatura com uma fracao dos bytes.
           thumbnail: `data:image/jpeg;base64,${source.thumbnail.toJPEG(70).toString('base64')}`,
-          appIcon: source.appIcon && !source.appIcon.isEmpty()
-            ? `data:image/png;base64,${source.appIcon.toPNG().toString('base64')}`
-            : null,
+          appIcon:
+            source.appIcon && !source.appIcon.isEmpty()
+              ? `data:image/png;base64,${source.appIcon.toPNG().toString('base64')}`
+              : null,
         }));
     }),
   );
@@ -406,8 +395,7 @@ export function registerSettingsIpc(
 
 /** Overlay flutuante que aparece sobre jogos. */
 export function registerOverlayIpc(): void {
-  const { updateOverlay, destroyOverlay } =
-    require('./overlay') as typeof import('./overlay');
+  const { updateOverlay, destroyOverlay } = require('./overlay') as typeof import('./overlay');
 
   ipcMain.handle(
     'overlay:update',
@@ -497,15 +485,13 @@ export function registerSocialIpc(session: Session): void {
 
 /** Moderacao: apelido, cargo, silenciar e expulsar. */
 export function registerModerationIpc(session: Session): void {
-  ipcMain.handle(
-    'members:nick',
-    (_e, serverId: string, userKey: string, nickname: string | null) =>
-      wrap(() =>
-        session.publish(serverId, () => {
-          session.requireStore().setNickname(serverId, userKey, nickname);
-          return true;
-        }),
-      ),
+  ipcMain.handle('members:nick', (_e, serverId: string, userKey: string, nickname: string | null) =>
+    wrap(() =>
+      session.publish(serverId, () => {
+        session.requireStore().setNickname(serverId, userKey, nickname);
+        return true;
+      }),
+    ),
   );
 
   ipcMain.handle(
@@ -540,7 +526,8 @@ export function registerModerationIpc(session: Session): void {
   /** Cargos disponiveis e a lista de permissoes, para a interface montar o menu. */
   ipcMain.handle('members:roles', () =>
     wrap(() => {
-      const { ROLE_PRESETS, PERMISSION_LIST } = require('@concord/core') as typeof import('@concord/core');
+      const { ROLE_PRESETS, PERMISSION_LIST } =
+        require('@concord/core') as typeof import('@concord/core');
       return {
         presets: ROLE_PRESETS.map((r) => ({
           id: r.id,

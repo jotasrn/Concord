@@ -130,8 +130,6 @@ export function useVoiceCall(
     }));
   }, [nomeDe]);
 
-
-
   /** Audio de um peer: vai para o mixer, que cuida de volume e silenciamento. */
   const anexarAudio = useCallback((peerKey: string, stream: MediaStream) => {
     const mixer = mixerRef.current;
@@ -354,7 +352,7 @@ export function useVoiceCall(
       setState((s) => {
         let mudou = false;
         const participants = s.participants.map((p) => {
-          const falandoAgora = (agora - (ultimaFala.get(p.key) ?? 0)) < HISTERESE_MS;
+          const falandoAgora = agora - (ultimaFala.get(p.key) ?? 0) < HISTERESE_MS;
           if (falandoAgora === p.speaking) return p;
           mudou = true;
           return { ...p, speaking: falandoAgora };

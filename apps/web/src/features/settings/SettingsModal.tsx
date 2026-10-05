@@ -37,7 +37,10 @@ export function SettingsModal({
   const [versao, setVersao] = useState<string | null>(null);
 
   useEffect(() => {
-    void window.concord.app.version().then(setVersao).catch(() => undefined);
+    void window.concord.app
+      .version()
+      .then(setVersao)
+      .catch(() => undefined);
   }, []);
 
   return (

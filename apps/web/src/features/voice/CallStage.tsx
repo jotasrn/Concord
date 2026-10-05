@@ -278,16 +278,7 @@ export function CallStage({
     }));
 
     return [proprio, ...outros];
-  }, [
-    state,
-    selfKey,
-    selfName,
-    selfAvatar,
-    remoteScreens,
-    peersPausados,
-    localMutedKeys,
-    pinned,
-  ]);
+  }, [state, selfKey, selfName, selfAvatar, remoteScreens, peersPausados, localMutedKeys, pinned]);
 
   const emDestaque = pinned ? tiles.find((t) => t.key === pinned) : null;
   const secundarios = emDestaque ? tiles.filter((t) => t.key !== emDestaque.key) : [];

@@ -39,7 +39,9 @@ const DEVICE_KEY = 'concord.device';
  * conta sobreviver a um F5: a ponte guarda os dados na pasta derivada dele.
  * Nao e a senha - a chave privada continua cifrada e so abre com ela.
  */
-export function deviceToken(storage: Pick<Storage, 'getItem' | 'setItem'> | null = safeStorage()): string {
+export function deviceToken(
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null = safeStorage(),
+): string {
   const salvo = storage?.getItem(DEVICE_KEY);
   if (salvo && /^[0-9a-f]{64}$/.test(salvo)) return salvo;
   const bytes = new Uint8Array(32);
@@ -277,7 +279,6 @@ export async function installWebAdapter(): Promise<void> {
     },
     onSyncUpdate: (handler: (serverId: string) => void) =>
       onPush('sync:updated', (sid) => handler(sid as string)),
-    onMigrationNotice: (handler: (info: unknown) => void) =>
-      onPush('migration:notice', handler),
+    onMigrationNotice: (handler: (info: unknown) => void) => onPush('migration:notice', handler),
   };
 }

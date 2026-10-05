@@ -142,7 +142,12 @@ export interface ConcordApi {
   members: {
     list(serverId: string): Promise<MemberView[]>;
     nick(serverId: string, userKey: string, nickname: string | null): Promise<boolean>;
-    role(serverId: string, userKey: string, permissions: string, roleName: string): Promise<boolean>;
+    role(
+      serverId: string,
+      userKey: string,
+      permissions: string,
+      roleName: string,
+    ): Promise<boolean>;
     mute(serverId: string, userKey: string, muted: boolean): Promise<boolean>;
     kick(serverId: string, userKey: string): Promise<boolean>;
     roles(): Promise<{
@@ -211,7 +216,11 @@ export interface ConcordApi {
     onStatus(handler: (status: UpdateStatus) => void): () => void;
   };
   profile: {
-    update(profile: { displayName: string; avatar: string | null; bio: string | null }): Promise<boolean>;
+    update(profile: {
+      displayName: string;
+      avatar: string | null;
+      bio: string | null;
+    }): Promise<boolean>;
     get(userKey: string): Promise<UserProfile | null>;
   };
   presence: {

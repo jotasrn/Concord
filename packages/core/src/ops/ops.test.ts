@@ -162,7 +162,13 @@ test('membro comum nao consegue criar canal', () => {
       seq: 0,
       lamport: 99,
       timestamp: Date.now(),
-      payload: { channelId: 'c-pirata', name: 'pirata', type: 'TEXT', categoryId: null, position: 0 },
+      payload: {
+        channelId: 'c-pirata',
+        name: 'pirata',
+        type: 'TEXT',
+        categoryId: null,
+        position: 0,
+      },
     },
     pedro.privateKey,
   );

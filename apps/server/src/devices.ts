@@ -62,7 +62,10 @@ export interface SweepResult {
  * ele recupera a conta pela frase num dispositivo novo e os peers reenviam o
  * resto.
  */
-export function sweepDataDir(dataDir: string, ativos: ReadonlySet<string> = new Set()): SweepResult {
+export function sweepDataDir(
+  dataDir: string,
+  ativos: ReadonlySet<string> = new Set(),
+): SweepResult {
   const resultado: SweepResult = { removidas: 0, legadasComConta: 0 };
   if (!existsSync(dataDir)) return resultado;
 

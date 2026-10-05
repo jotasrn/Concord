@@ -131,7 +131,12 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
           {mode === 'create' && (
             <>
               <p className="text-sm text-ink-200">Criar conta neste dispositivo</p>
-              <Input value={displayName} onChange={setDisplayName} placeholder="Nome de exibicao" autoFocus />
+              <Input
+                value={displayName}
+                onChange={setDisplayName}
+                placeholder="Nome de exibicao"
+                autoFocus
+              />
               <Input
                 type="password"
                 value={password}
@@ -235,10 +240,9 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
                 <div className="space-y-2 rounded-lg border border-status-dnd/40 bg-status-dnd/10 p-3">
                   <p className="flex items-start gap-2 text-xs text-status-dnd">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    Essa frase e de uma conta DIFERENTE da que ja esta neste
-                    dispositivo. Continuar substitui a conta atual, e as
-                    mensagens dela ficam ilegiveis para sempre - a chave que as
-                    protege muda junto com a identidade.
+                    Essa frase e de uma conta DIFERENTE da que ja esta neste dispositivo. Continuar
+                    substitui a conta atual, e as mensagens dela ficam ilegiveis para sempre - a
+                    chave que as protege muda junto com a identidade.
                   </p>
                   <div className="flex gap-2">
                     <Button onClick={() => restore(true)} disabled={busy} className="flex-1">

@@ -1,12 +1,5 @@
 import { useEffect, useRef } from 'react';
-import {
-  MoreHorizontal,
-  Pin,
-  PinOff,
-  User,
-  Volume2,
-  VolumeX,
-} from 'lucide-react';
+import { MoreHorizontal, Pin, PinOff, User, Volume2, VolumeX } from 'lucide-react';
 import { Avatar } from '../../components/ui';
 import { VOLUME_MAXIMO } from './audio/RemoteAudioMixer';
 

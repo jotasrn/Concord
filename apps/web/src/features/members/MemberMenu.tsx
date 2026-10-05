@@ -85,9 +85,7 @@ export function MemberMenu({
             </p>
             {/* Mostra o nome real quando ha apelido, para nao esconder quem e. */}
             {member.nickname && (
-              <p className="truncate text-[11px] text-ink-400">
-                perfil: {member.profileName}
-              </p>
+              <p className="truncate text-[11px] text-ink-400">perfil: {member.profileName}</p>
             )}
             <p className="truncate font-mono text-[10px] text-ink-400">
               #{member.userKey.slice(0, 12)}
@@ -145,12 +143,7 @@ export function MemberMenu({
                   disabled={ocupado || (p.id === 'admin' && !souDono)}
                   onClick={() =>
                     void executar(() =>
-                      window.concord.members.role(
-                        serverId,
-                        member.userKey,
-                        p.permissions,
-                        p.label,
-                      ),
+                      window.concord.members.role(serverId, member.userKey, p.permissions, p.label),
                     )
                   }
                   className={`rounded-lg border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${

@@ -84,7 +84,11 @@ export function ShareControls({
               : 'text-ink-300 hover:bg-void-700 hover:text-violet-400'
           }`}
         >
-          {paused ? <Play className="mx-auto h-3.5 w-3.5" /> : <Pause className="mx-auto h-3.5 w-3.5" />}
+          {paused ? (
+            <Play className="mx-auto h-3.5 w-3.5" />
+          ) : (
+            <Pause className="mx-auto h-3.5 w-3.5" />
+          )}
         </button>
         <button
           onClick={onSwitchSource}

@@ -1,4 +1,4 @@
-electronVersion: 32.3.3
+electronVersion: 42.11.10
 appId: com.concord.app
 productName: Concord
 directories:
@@ -58,6 +58,5 @@ publish:
   repo: Concord
   releaseType: release
 
-# Fuses gravados no binario apos o empacotamento (electron-builder 25 ainda
-# nao expoe electronFuses na configuracao).
+# Fuses gravados no binario apos o empacotamento (ver scripts/afterPack.js).
 afterPack: scripts/afterPack.js

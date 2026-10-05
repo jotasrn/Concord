@@ -107,8 +107,12 @@ function createWindow(): void {
   window.webContents.on('did-fail-load', (_e, code, description, url) => {
     log('error', `renderer falhou ao carregar ${url}: ${description} (${code})`);
   });
-  window.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-    if (level >= 2) log('error', `renderer: ${message} (${sourceId}:${line})`);
+  // Electron 35+ entrega os dados no proprio evento; os argumentos
+  // posicionais (level numerico, message, line, sourceId) foram descontinuados.
+  window.webContents.on('console-message', (details) => {
+    if (details.level === 'error') {
+      log('error', `renderer: ${details.message} (${details.sourceId}:${details.lineNumber})`);
+    }
   });
   window.webContents.on('render-process-gone', (_e, details) => {
     log('error', `renderer encerrado: ${details.reason}`);

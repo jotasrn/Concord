@@ -5,18 +5,23 @@
  * so voltam se alguem reescrever e reassinar o binario - nao ha variavel de
  * ambiente nem argumento de linha de comando que os reative.
  *
- * Feito aqui porque o electron-builder 25 ainda nao expoe `electronFuses` na
- * configuracao.
+ * Feito aqui (e nao via `electronFuses` do electron-builder 26) para manter
+ * os fuses num arquivo so, testavel fora do empacotamento.
  */
 const { join } = require('node:path');
 
 module.exports = async function afterPack(context) {
   const { FuseV1Options, FuseVersion, flipFuses } = require('@electron/fuses');
 
-  const executavel = join(
-    context.appOutDir,
-    `${context.packager.appInfo.productFilename}${process.platform === 'win32' ? '.exe' : ''}`,
-  );
+  // Nome e extensao do executavel dependem da plataforma ALVO, nao da que
+  // esta rodando o build: no Linux o binario e `concord`, no Windows
+  // `Concord.exe`. Usar process.platform quebrava qualquer build cruzado.
+  const plataforma = context.electronPlatformName;
+  const nome =
+    plataforma === 'darwin'
+      ? join(`${context.packager.appInfo.productFilename}.app`)
+      : `${context.packager.executableName}${plataforma === 'win32' ? '.exe' : ''}`;
+  const executavel = join(context.appOutDir, nome);
 
   await flipFuses(executavel, {
     version: FuseVersion.V1,

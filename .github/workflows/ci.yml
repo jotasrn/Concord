@@ -34,11 +34,11 @@ jobs:
       - name: Testes
         run: npm test
 
+      # Bloqueante: a arvore estava com 29 vulnerabilidades (2 criticas)
+      # porque este passo nunca falhava o build. Zerado na mesma revisao que
+      # tornou o passo obrigatorio - daqui em diante, quebra o PR.
       - name: Vulnerabilidades conhecidas nas dependencias
         run: npm audit --audit-level=high
-        # Uma dependencia transitiva com CVE alto nao deveria travar o PR
-        # sozinha sem alguem olhar - mas o resultado fica visivel no log.
-        continue-on-error: true
 
   codeql:
     runs-on: ubuntu-latest

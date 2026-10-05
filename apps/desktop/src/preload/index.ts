@@ -97,8 +97,8 @@ const api = {
   voice: {
     signal: (serverId: string, signal: unknown) =>
       call<boolean>('voice:signal', serverId, signal),
-    onSignal: (handler: (serverId: string, signal: any) => void) => {
-      const listener = (_e: unknown, serverId: string, signal: any) => handler(serverId, signal);
+    onSignal: (handler: (serverId: string, signal: unknown) => void) => {
+      const listener = (_e: unknown, serverId: string, signal: unknown) => handler(serverId, signal);
       ipcRenderer.on('voice:incoming', listener);
       return () => ipcRenderer.removeListener('voice:incoming', listener);
     },
@@ -130,8 +130,8 @@ const api = {
     accept: (serverId: string) => call<string>('invites:acceptPending', serverId),
     decline: (serverId: string) => call<boolean>('invites:decline', serverId),
   },
-  onSocialEvent: (handler: (evento: string, dados: any) => void) => {
-    const listener = (_e: unknown, evento: string, dados: any) => handler(evento, dados);
+  onSocialEvent: (handler: (evento: string, dados: unknown) => void) => {
+    const listener = (_e: unknown, evento: string, dados: unknown) => handler(evento, dados);
     ipcRenderer.on('social:event', listener);
     return () => ipcRenderer.removeListener('social:event', listener);
   },
@@ -143,8 +143,8 @@ const api = {
     end: (targetKey: string, callId: string) => call<boolean>('calls:end', targetKey, callId),
     signal: (targetKey: string, signal: unknown) =>
       call<boolean>('calls:signal', targetKey, signal),
-    onSignal: (handler: (callId: string, signal: any) => void) => {
-      const listener = (_e: unknown, callId: string, signal: any) => handler(callId, signal);
+    onSignal: (handler: (callId: string, signal: unknown) => void) => {
+      const listener = (_e: unknown, callId: string, signal: unknown) => handler(callId, signal);
       ipcRenderer.on('call:incoming-signal', listener);
       return () => ipcRenderer.removeListener('call:incoming-signal', listener);
     },

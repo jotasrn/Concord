@@ -78,7 +78,7 @@ export class P2PNode extends EventEmitter {
     if (this.swarm) return;
     this.swarm = new Hyperswarm();
 
-    this.swarm.on('connection', (socket: any, info: any) => {
+    this.swarm.on('connection', (socket, info) => {
       const remoteKey: string = info.publicKey.toString('hex');
       const peer: PeerConnection = {
         socket,

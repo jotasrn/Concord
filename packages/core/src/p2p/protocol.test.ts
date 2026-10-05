@@ -3,7 +3,14 @@ import test from 'node:test';
 import { generateRecoveryPhrase, identityFromPhrase } from '../identity/keystore';
 import { toHex } from '../identity/keypair';
 import { ConcordStore } from '../store';
-import { FrameDecoder, computeHeads, encodeFrame, operationsMissingFor } from './protocol';
+import {
+  FrameDecoder,
+  MAX_VOICE_SIGNAL_BYTES,
+  computeHeads,
+  encodeFrame,
+  operationsMissingFor,
+  parseVoiceSignal,
+} from './protocol';
 
 test('heads registram o maior seq de cada autor', () => {
   const joao = identityFromPhrase(generateRecoveryPhrase(), 'joao');
@@ -108,4 +115,27 @@ test('ciclo completo de sync reproduz o estado no outro peer', () => {
 
   a.close();
   b.close();
+});
+
+test('parseVoiceSignal aceita sinal valido e descarta o from declarado', () => {
+  const s = parseVoiceSignal({ kind: 'offer', channelId: 'c1', from: 'forjado', data: { sdp: 'v=0' } });
+  assert.deepEqual(s, { kind: 'offer', from: '', channelId: 'c1', data: { sdp: 'v=0' } });
+  const comDestino = parseVoiceSignal({ kind: 'ice', channelId: 'c1', to: 'a'.repeat(64) });
+  assert.equal(comDestino?.to, 'a'.repeat(64));
+});
+
+test('parseVoiceSignal recusa formato errado, tipo desconhecido e payload gigante', () => {
+  assert.equal(parseVoiceSignal(null), null);
+  assert.equal(parseVoiceSignal([]), null);
+  assert.equal(parseVoiceSignal({ kind: 'hack', channelId: 'c1' }), null);
+  assert.equal(parseVoiceSignal({ kind: 'offer' }), null);
+  assert.equal(parseVoiceSignal({ kind: 'offer', channelId: 'x'.repeat(200) }), null);
+  assert.equal(parseVoiceSignal({ kind: 'offer', channelId: 'c1', to: 'nao-hex' }), null);
+  assert.equal(
+    parseVoiceSignal({ kind: 'offer', channelId: 'c1', data: 'x'.repeat(MAX_VOICE_SIGNAL_BYTES + 1) }),
+    null,
+  );
+  const circular: Record<string, unknown> = {};
+  circular.self = circular;
+  assert.equal(parseVoiceSignal({ kind: 'offer', channelId: 'c1', data: circular }), null);
 });

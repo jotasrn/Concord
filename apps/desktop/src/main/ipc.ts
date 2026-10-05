@@ -2,6 +2,15 @@ import { BrowserWindow, app, ipcMain } from 'electron';
 import { Session } from './session';
 
 /**
+ * Validador de sinal de voz do core, carregado tarde como o resto do core
+ * neste processo (ver createSession em index.ts).
+ */
+function voiceSignal(signal: unknown) {
+  const { parseVoiceSignal } = require('@concord/core') as typeof import('@concord/core');
+  return parseVoiceSignal(signal);
+}
+
+/**
  * Todo IPC responde no mesmo envelope { ok, data } | { ok, error }. O renderer
  * nunca recebe uma excecao crua: mensagens de erro internas nao devem virar
  * texto de UI sem passar por aqui.
@@ -232,7 +241,9 @@ export function registerIpc(
 export function registerVoiceAndInviteIpc(session: Session): void {
   ipcMain.handle('voice:signal', (_e, serverId: string, signal: unknown) =>
     wrap(() => {
-      session.sendVoiceSignal(serverId, signal);
+      const valido = voiceSignal(signal);
+      if (!valido) throw new Error('Sinal de voz invalido');
+      session.sendVoiceSignal(serverId, valido);
       return true;
     }),
   );
@@ -476,7 +487,9 @@ export function registerSocialIpc(session: Session): void {
 
   ipcMain.handle('calls:signal', (_e, targetKey: string, signal: unknown) =>
     wrap(() => {
-      session.sendCallSignal(targetKey, signal);
+      const valido = voiceSignal(signal);
+      if (!valido) throw new Error('Sinal de chamada invalido');
+      session.sendCallSignal(targetKey, valido);
       return true;
     }),
   );

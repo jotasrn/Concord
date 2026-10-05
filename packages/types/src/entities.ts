@@ -13,7 +13,7 @@ export interface User {
   updatedAt: string;
 }
 
-export interface PublicUser extends Pick<User, 'id' | 'username' | 'displayName' | 'avatar' | 'status'> {}
+export type PublicUser = Pick<User, 'id' | 'username' | 'displayName' | 'avatar' | 'status'>;
 
 export interface ConcordServer {
   id: string;

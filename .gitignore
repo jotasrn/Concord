@@ -1,15 +1,18 @@
 node_modules/
 dist/
 build/
+# Icones do instalador e da bandeja: ficavam ignorados pelo `build/` acima,
+# e o build de release no CI saia sem icone.
+!apps/desktop/build/
 .env
 .env.local
 *.log
 .DS_Store
 coverage/
 .turbo/
-apps/api/generated/
-apps/api/prisma/migrations/dev.db
-infrastructure/turn/turnserver.conf
 *.tsbuildinfo
 apps/desktop/release/
 apps/desktop/staging/
+# Compilado por engano dentro de src/ (o build sai em dist/).
+apps/*/src/**/*.js
+!apps/web/src/**/*.js

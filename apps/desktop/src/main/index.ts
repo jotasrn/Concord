@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { BrowserWindow, app, nativeImage, session as electronSession, shell } from 'electron';
 import { registerIpc } from './ipc';
 import { destroyTray, isQuitting, markQuitting, setCallActive, setupTray } from './background';
-import { applyCoreLimit, machineResources, readSettings, settingsPath } from './settings';
+import { applyCoreLimit, readSettings, settingsPath } from './settings';
 import { initUpdater, noteCallActive, stopUpdater } from './updater';
 import type { Session as SessionType } from './session';
 

@@ -25,6 +25,12 @@ jobs:
 
       - run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Formatacao
+        run: npm run format:check
+
       - name: Build (packages primeiro, na ordem de dependencia)
         run: npm run build
 

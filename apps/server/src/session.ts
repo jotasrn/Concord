@@ -185,7 +185,7 @@ export class Session {
     return result;
   }
 
-  sendVoiceSignal(serverId: string, signal: any): void {
+  sendVoiceSignal(serverId: string, signal: Parameters<P2PNode['sendVoiceSignal']>[1]): void {
     this.requireNode().sendVoiceSignal(serverId, signal);
   }
 

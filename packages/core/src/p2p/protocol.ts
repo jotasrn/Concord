@@ -141,6 +141,47 @@ export interface VoiceSignal {
   data?: unknown;
 }
 
+const VOICE_KINDS: ReadonlySet<string> = new Set(['join', 'leave', 'offer', 'answer', 'ice', 'state']);
+
+/**
+ * Teto do sinal serializado. SDP com video e simulcast fica em poucos KB;
+ * acima disso e lixo ou abuso, e cada sinal e cifrado e reenviado a todos os
+ * peers do servidor.
+ */
+export const MAX_VOICE_SIGNAL_BYTES = 64 * 1024;
+
+/**
+ * Valida um sinal de voz vindo de fora do core (renderer, ponte web). Antes
+ * ele atravessava como `any` direto para a rede: um renderer comprometido
+ * podia difundir qualquer objeto, de qualquer tamanho, para todos os peers.
+ * `from` nao e aceito daqui - o no sempre preenche com a propria chave.
+ */
+export function parseVoiceSignal(value: unknown): VoiceSignal | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.kind !== 'string' || !VOICE_KINDS.has(v.kind)) return null;
+  if (typeof v.channelId !== 'string' || v.channelId.length === 0 || v.channelId.length > 128) {
+    return null;
+  }
+  if (v.to !== undefined && (typeof v.to !== 'string' || !/^[0-9a-f]{64}$/.test(v.to))) return null;
+
+  let tamanho: number;
+  try {
+    tamanho = JSON.stringify(v.data ?? null).length;
+  } catch {
+    return null;
+  }
+  if (tamanho > MAX_VOICE_SIGNAL_BYTES) return null;
+
+  return {
+    kind: v.kind as VoiceSignal['kind'],
+    from: '',
+    ...(v.to !== undefined ? { to: v.to as string } : {}),
+    channelId: v.channelId,
+    ...(v.data !== undefined ? { data: v.data } : {}),
+  };
+}
+
 /** Status declarado por um peer. Nao e assinado nem persistido. */
 export type PresenceStatus = 'ONLINE' | 'IDLE' | 'DND' | 'INVISIBLE';
 

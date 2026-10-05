@@ -3,6 +3,7 @@ import type { IncomingMessage } from 'node:http';
 import { cpus, totalmem } from 'node:os';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { PERMISSION_LIST, ROLE_PRESETS, parseVoiceSignal } from '@concord/core';
 import { Session } from './session';
 import { deviceDir, ensureDir, isValidDeviceToken, removeIfEmpty } from './devices';
 import {
@@ -419,7 +420,9 @@ async function dispatch(ctx: Contexto, channel: string, args: unknown[]): Promis
     // --- voz ---
     case 'voice:signal': {
       const [serverId, signal] = args as [string, unknown];
-      session.sendVoiceSignal(serverId, signal);
+      const valido = parseVoiceSignal(signal);
+      if (!valido) throw new Error('Sinal de voz invalido');
+      session.sendVoiceSignal(serverId, valido);
       return true;
     }
 
@@ -529,16 +532,14 @@ async function dispatch(ctx: Contexto, channel: string, args: unknown[]): Promis
 
     // --- roles ---
     case 'members:roles': {
-      // Importacao lazy para nao carregar o modulo sem necessidade.
-      const { ROLE_PRESETS, PERMISSION_LIST } = require('@concord/core') as typeof import('@concord/core');
       return {
-        presets: ROLE_PRESETS.map((r: any) => ({
+        presets: ROLE_PRESETS.map((r) => ({
           id: r.id,
           label: r.label,
           description: r.description,
           permissions: r.permissions.toString(),
         })),
-        permissions: PERMISSION_LIST.map((p: any) => ({
+        permissions: PERMISSION_LIST.map((p) => ({
           flag: String(p.flag),
           label: p.label,
           hint: p.hint,

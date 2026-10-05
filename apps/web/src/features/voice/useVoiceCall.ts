@@ -556,10 +556,11 @@ export function useVoiceCall(
 
   useEffect(() => {
     const mixer = mixerRef.current;
+    const screen = screenRef.current;
     return () => {
       void transportRef.current?.disconnect();
       void engineRef.current?.stop();
-      void screenRef.current.stop();
+      void screen.stop();
       mixer.stop();
     };
   }, []);

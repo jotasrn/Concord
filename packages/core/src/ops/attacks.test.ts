@@ -168,7 +168,7 @@ test('moderador nao se autopromove a administrador', () => {
 });
 
 test('moderador nao rebaixa nem expulsa outro moderador com permissao que nao possui', () => {
-  const { store, serverId, moderador, outroModerador, outroKey } = cenarioComModerador();
+  const { store, serverId, moderador, outroKey } = cenarioComModerador();
 
   // Da ao segundo moderador uma permissao extra que o primeiro nao tem.
   store.setRole(

@@ -57,7 +57,7 @@ Descricao arquivo por arquivo em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Rodar em desenvolvimento
 
-Requisito: **Node 20+** (o CI usa Node 22).
+Requisito: **Node 22+**.
 
 ```bash
 npm install
@@ -103,6 +103,8 @@ Deploy em [docs/DEPLOY_WEB.md](docs/DEPLOY_WEB.md).
 | `npm run dev` | Builda tudo e abre o Electron com hot reload |
 | `npm run build` | Compila todos os workspaces, na ordem de dependencia |
 | `npm test` | Roda os testes de todos os workspaces |
+| `npm run lint` | ESLint em todo o monorepo |
+| `npm run format` | Formata com Prettier (`format:check` so confere) |
 | `npm run dist` | Gera o instalador local, sem publicar |
 | `npm run dist --workspace=apps/desktop` | Idem, direto no workspace |
 
@@ -112,10 +114,18 @@ Deploy em [docs/DEPLOY_WEB.md](docs/DEPLOY_WEB.md).
 npm test
 ```
 
-75 testes no `packages/core`: convergencia entre peers, assinatura e
-verificacao de operacoes, sincronizacao apos ficar offline, protocolo de
-enquadramento e um conjunto adversarial (payload nulo, tipo errado, mensagem
-gigante, uma operacao invalida que nao pode derrubar as demais).
+- **`packages/core`** (88): convergencia entre peers, assinatura e verificacao
+  de operacoes, sincronizacao apos ficar offline, protocolo de enquadramento,
+  validacao de sinal de voz e um conjunto adversarial (payload nulo, tipo
+  errado, mensagem gigante, uma operacao invalida que nao pode derrubar as
+  demais).
+- **`apps/web`** (38): transporte de voz P2P contra um WebRTC simulado
+  (colisao de offers, candidates fora de ordem, tela, recuperacao de
+  conexao), ajuste de SDP do Opus, detector de voz e token de dispositivo.
+- **`apps/server`** (25): ponte web de ponta a ponta via WebSocket real -
+  sessao por dispositivo, faxina de pastas, limites, Origin, trava de senha.
+
+O CI roda lint, formatacao, build, testes, `npm audit` (bloqueante) e CodeQL.
 
 ## Documentacao
 

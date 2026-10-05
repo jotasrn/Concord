@@ -79,7 +79,7 @@ export function UpdateBanner() {
       <button
         onClick={() => setDispensado(true)}
         title="Esconder este aviso"
-        className="rounded px-2 py-1 text-ink-400 transition hover:text-ink-200"
+        className="rounded-sm px-2 py-1 text-ink-400 transition hover:text-ink-200"
       >
         Depois
       </button>

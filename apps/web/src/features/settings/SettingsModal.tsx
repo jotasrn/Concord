@@ -59,7 +59,7 @@ export function SettingsModal({
           <button
             onClick={onClose}
             aria-label="Fechar configuracoes"
-            className="mt-4 w-full rounded px-3 py-2 text-left text-sm text-ink-400 hover:text-ink-100"
+            className="mt-4 w-full rounded-sm px-3 py-2 text-left text-sm text-ink-400 hover:text-ink-100"
           >
             Fechar
           </button>

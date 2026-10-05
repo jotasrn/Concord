@@ -474,7 +474,7 @@ export function AppPage({ profile }: { profile: Profile }) {
               onClick={criarConvite}
               title="Gerar convite"
               aria-label="Gerar convite"
-              className="rounded p-1 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
+              className="rounded-sm p-1 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
             >
               <Share2 className="h-4 w-4" />
             </button>
@@ -598,7 +598,7 @@ export function AppPage({ profile }: { profile: Profile }) {
             onClick={() => setShowSettings(true)}
             title="Configuracoes"
             aria-label="Abrir configuracoes"
-            className="rounded p-1.5 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
+            className="rounded-sm p-1.5 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
           >
             <Settings className="h-4 w-4" />
           </button>
@@ -716,7 +716,7 @@ export function AppPage({ profile }: { profile: Profile }) {
             <button
               onClick={addMember}
               title="Adicionar alguem ao servidor"
-              className="rounded p-1 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
+              className="rounded-sm p-1 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
             >
               <UserPlus className="h-4 w-4" />
             </button>
@@ -942,7 +942,7 @@ function ChannelGroup({
               <span className="text-ink-400">{icon}</span>
               <span className="flex-1 truncate text-left">{c.name}</span>
               {dentro.length > 0 && (
-                <span className="rounded bg-violet-600/25 px-1.5 text-[10px] font-semibold text-violet-200">
+                <span className="rounded-sm bg-violet-600/25 px-1.5 text-[10px] font-semibold text-violet-200">
                   {dentro.length}
                 </span>
               )}
@@ -952,7 +952,7 @@ function ChannelGroup({
             {dentro.map((pessoa) => (
               <div
                 key={pessoa.userKey}
-                className="ml-6 flex items-center gap-1.5 rounded px-2 py-1"
+                className="ml-6 flex items-center gap-1.5 rounded-sm px-2 py-1"
                 title={pessoa.name}
               >
                 <Avatar

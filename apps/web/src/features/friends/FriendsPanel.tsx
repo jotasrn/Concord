@@ -155,7 +155,7 @@ export function FriendsPanel({
                     await window.concord.friends.remove(f.userKey);
                     await recarregar();
                   }}
-                  className="rounded p-1.5 text-ink-400 transition hover:text-status-dnd"
+                  className="rounded-sm p-1.5 text-ink-400 transition hover:text-status-dnd"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -224,7 +224,7 @@ export function FriendsPanel({
                 await window.concord.friends.remove(f.userKey);
                 await recarregar();
               }}
-              className="rounded p-1.5 text-ink-400 transition hover:text-status-dnd"
+              className="rounded-sm p-1.5 text-ink-400 transition hover:text-status-dnd"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>

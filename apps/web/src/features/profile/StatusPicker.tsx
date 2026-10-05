@@ -43,7 +43,7 @@ export function StatusPicker({
       <button
         onClick={() => setAberto((a) => !a)}
         title="Mudar status"
-        className="flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-ink-400 transition hover:bg-void-700 hover:text-ink-200"
+        className="flex items-center gap-1 rounded-sm px-1 py-0.5 text-[10px] text-ink-400 transition hover:bg-void-700 hover:text-ink-200"
       >
         <span className={`h-2 w-2 rounded-full ${atual?.cor ?? 'bg-status-offline'}`} />
         {ROTULOS_STATUS[status]}

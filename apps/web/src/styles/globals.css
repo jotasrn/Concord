@@ -1,6 +1,99 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@theme {
+  --color-void-400: #45454f;
+  --color-void-500: #32323e;
+  --color-void-600: #24242e;
+  --color-void-700: #1a1a22;
+  --color-void-800: #121218;
+  --color-void-850: #0c0c11;
+  --color-void-900: #07070a;
+  --color-void-950: #000000;
+
+  --color-violet-300: #c4a6ff;
+  --color-violet-400: #a87bff;
+  --color-violet-500: #8b5cf6;
+  --color-violet-600: #7333e8;
+  --color-violet-700: #5b21b6;
+
+  --color-status-online: #3be38b;
+  --color-status-idle: #f5c542;
+  --color-status-dnd: #ff4757;
+  --color-status-offline: #5a5a66;
+
+  --color-ink-100: #f2f0f7;
+  --color-ink-200: #c9c4d6;
+  --color-ink-300: #8e8899;
+  --color-ink-400: #5f5a6b;
+
+  --font-sans: Inter, Segoe UI, system-ui, sans-serif;
+  --font-mono: JetBrains Mono, Consolas, monospace;
+
+  --shadow-glow: 0 0 28px -6px rgba(139, 92, 246, 0.55);
+  --shadow-glow-soft: 0 0 18px -8px rgba(168, 123, 255, 0.7);
+
+  --animate-pulse-ring: pulseRing 1.4s ease-in-out infinite;
+
+  @keyframes pulseRing {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  /* v4 trocou o cursor padrao de botoes para `default`; o app inteiro conta
+     com a maozinha da v3. */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* v4 deriva o placeholder da cor do texto; a v3 usava gray-400. */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+}
+
+@utility btn-primary {
+  @apply rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white
+           transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+@utility btn-ghost {
+  @apply rounded-lg px-4 py-2 text-sm font-medium text-ink-200 transition
+           hover:bg-void-700 hover:text-ink-100;
+}
+
+@utility field {
+  @apply w-full rounded-lg border border-void-600 bg-void-850 px-3 py-2 text-sm
+           text-ink-100 placeholder:text-ink-400 focus:border-violet-500 focus:outline-hidden;
+}
+
+@utility panel {
+  @apply rounded-xl border border-void-700 bg-void-900;
+}
 
 @layer base {
   html,
@@ -40,27 +133,6 @@
   }
 
   :focus-visible {
-    @apply outline-none ring-2 ring-violet-500 ring-offset-2 ring-offset-void-950;
-  }
-}
-
-@layer components {
-  .btn-primary {
-    @apply rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white
-           transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40;
-  }
-
-  .btn-ghost {
-    @apply rounded-lg px-4 py-2 text-sm font-medium text-ink-200 transition
-           hover:bg-void-700 hover:text-ink-100;
-  }
-
-  .field {
-    @apply w-full rounded-lg border border-void-600 bg-void-850 px-3 py-2 text-sm
-           text-ink-100 placeholder:text-ink-400 focus:border-violet-500 focus:outline-none;
-  }
-
-  .panel {
-    @apply rounded-xl border border-void-700 bg-void-900;
+    @apply outline-hidden ring-2 ring-violet-500 ring-offset-2 ring-offset-void-950;
   }
 }

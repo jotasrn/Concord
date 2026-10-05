@@ -66,7 +66,7 @@ export function MemberMenu({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6"
+      className="fixed inset-0 z-70 flex items-center justify-center bg-black/80 p-6"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="panel w-full max-w-sm space-y-5 p-5">

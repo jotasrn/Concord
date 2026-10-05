@@ -69,7 +69,7 @@ export function DirectCallOverlay({
   if (state.phase === 'idle') {
     if (!avisoFinal) return null;
     return (
-      <div className="fixed inset-x-0 bottom-6 z-[90] flex justify-center">
+      <div className="fixed inset-x-0 bottom-6 z-90 flex justify-center">
         <p className="rounded-full border border-void-700 bg-void-900/95 px-4 py-2 text-xs text-ink-300 shadow-xl">
           Chamada encerrada &mdash; {avisoFinal}
         </p>
@@ -81,11 +81,11 @@ export function DirectCallOverlay({
   const tocandoSaida = state.phase === 'ringing-out';
 
   return (
-    <div className="fixed inset-0 z-[90] flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm">
+    <div className="fixed inset-0 z-90 flex flex-col items-center justify-center bg-black/90 backdrop-blur-xs">
       {state.remoteScreen ? (
         <div className="relative aspect-video w-full max-w-4xl overflow-hidden rounded-xl border border-violet-800/50 bg-black">
           <Video stream={state.remoteScreen} />
-          <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/90 to-transparent px-3 py-2">
+          <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-linear-to-t from-black/90 to-transparent px-3 py-2">
             <Avatar name={state.peerName} userKey={state.peerKey ?? ''} src={state.peerAvatar} size={28} />
             <span className="text-sm font-semibold text-ink-100">{state.peerName}</span>
           </div>
@@ -111,7 +111,7 @@ export function DirectCallOverlay({
       </p>
 
       {state.error && (
-        <p className="mb-4 max-w-sm rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-center text-xs text-red-300">
+        <p className="mb-4 max-w-sm rounded-sm border border-red-500/40 bg-red-500/10 px-3 py-2 text-center text-xs text-red-300">
           {state.error}
         </p>
       )}

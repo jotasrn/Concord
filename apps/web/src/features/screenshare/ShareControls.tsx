@@ -40,7 +40,7 @@ export function ShareControls({
           {capture.sourceName}
         </span>
         {capture.hasAudio && (
-          <span className="rounded bg-violet-600/30 px-1 text-[9px] text-violet-300">som</span>
+          <span className="rounded-sm bg-violet-600/30 px-1 text-[9px] text-violet-300">som</span>
         )}
       </div>
 
@@ -89,7 +89,7 @@ export function ShareControls({
         <button
           onClick={onSwitchSource}
           title="Trocar fonte"
-          className="flex-1 rounded p-1 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
+          className="flex-1 rounded-sm p-1 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
         >
           <Repeat className="mx-auto h-3.5 w-3.5" />
         </button>

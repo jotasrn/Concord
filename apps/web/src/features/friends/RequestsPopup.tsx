@@ -36,7 +36,7 @@ export function RequestsPopup({
   if (total === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed right-4 top-4 z-[65] flex w-80 flex-col gap-2">
+    <div className="pointer-events-none fixed right-4 top-4 z-65 flex w-80 flex-col gap-2">
       {friendRequests.map((pedido) => (
         <article
           key={pedido.userKey}
@@ -69,13 +69,13 @@ export function RequestsPopup({
           <div className="flex gap-1 border-t border-void-700 p-2">
             <button
               onClick={() => onRespondFriend(pedido.userKey, true)}
-              className="flex flex-1 items-center justify-center gap-1 rounded bg-violet-600 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-500"
+              className="flex flex-1 items-center justify-center gap-1 rounded-sm bg-violet-600 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-500"
             >
               <Check className="h-3.5 w-3.5" /> Aceitar
             </button>
             <button
               onClick={() => onRespondFriend(pedido.userKey, false)}
-              className="flex flex-1 items-center justify-center gap-1 rounded bg-void-700 py-1.5 text-xs text-ink-300 transition hover:bg-status-dnd/20 hover:text-status-dnd"
+              className="flex flex-1 items-center justify-center gap-1 rounded-sm bg-void-700 py-1.5 text-xs text-ink-300 transition hover:bg-status-dnd/20 hover:text-status-dnd"
             >
               <X className="h-3.5 w-3.5" /> Recusar
             </button>
@@ -110,13 +110,13 @@ export function RequestsPopup({
           <div className="flex gap-1 border-t border-void-700 p-2">
             <button
               onClick={() => onRespondInvite(convite.serverId, true)}
-              className="flex flex-1 items-center justify-center gap-1 rounded bg-violet-600 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-500"
+              className="flex flex-1 items-center justify-center gap-1 rounded-sm bg-violet-600 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-500"
             >
               <Check className="h-3.5 w-3.5" /> Entrar
             </button>
             <button
               onClick={() => onRespondInvite(convite.serverId, false)}
-              className="flex flex-1 items-center justify-center gap-1 rounded bg-void-700 py-1.5 text-xs text-ink-300 transition hover:bg-status-dnd/20 hover:text-status-dnd"
+              className="flex flex-1 items-center justify-center gap-1 rounded-sm bg-void-700 py-1.5 text-xs text-ink-300 transition hover:bg-status-dnd/20 hover:text-status-dnd"
             >
               <X className="h-3.5 w-3.5" /> Ignorar
             </button>

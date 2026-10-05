@@ -63,7 +63,7 @@ export function SourcePicker({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-6"
+      className="fixed inset-0 z-70 flex items-center justify-center bg-black/85 p-6"
       onMouseDown={(e) => e.target === e.currentTarget && onCancel()}
     >
       <div className="panel flex h-[640px] w-full max-w-4xl flex-col overflow-hidden">
@@ -73,7 +73,7 @@ export function SourcePicker({
           <button
             onClick={carregar}
             title="Atualizar lista"
-            className="rounded p-1.5 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
+            className="rounded-sm p-1.5 text-ink-300 transition hover:bg-void-700 hover:text-violet-400"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>

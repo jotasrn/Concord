@@ -9,7 +9,7 @@ import path from 'node:path';
 // para quando nao ha IPC do Electron para perguntar a versao de verdade -
 // ou seja, no cliente web.
 const versaoDoMonorepo = JSON.parse(
-  readFileSync(resolve(__dirname, '../../package.json'), 'utf8'),
+  readFileSync(resolve(import.meta.dirname, '../../package.json'), 'utf8'),
 ).version as string;
 
 export default defineConfig({
@@ -26,14 +26,14 @@ export default defineConfig({
       // O overlay e uma pagina separada: janela propria, sem React nem o
       // bundle do app, para pesar o minimo possivel sobre um jogo.
       input: {
-        index: resolve(__dirname, 'index.html'),
-        overlay: resolve(__dirname, 'overlay.html'),
+        index: resolve(import.meta.dirname, 'index.html'),
+        overlay: resolve(import.meta.dirname, 'overlay.html'),
       },
     },
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   server: {

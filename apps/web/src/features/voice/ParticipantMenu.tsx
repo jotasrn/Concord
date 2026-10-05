@@ -76,7 +76,7 @@ export function ParticipantMenu({
     <div
       ref={ref}
       style={{ left: Math.max(12, x), top: Math.max(12, y), width: LARGURA }}
-      className="fixed z-[80] overflow-hidden rounded-xl border border-void-700 bg-void-900 shadow-2xl"
+      className="fixed z-80 overflow-hidden rounded-xl border border-void-700 bg-void-900 shadow-2xl"
     >
       <header className="flex items-center gap-2 border-b border-void-700 px-3 py-2.5">
         <Avatar name={target.name} userKey={target.key} src={target.avatar} size={32} />
@@ -166,7 +166,7 @@ export function ParticipantMenuButton({
         onOpen({ x: rect.left, y: rect.bottom + 4 });
       }}
       title="Mais acoes"
-      className="rounded p-1 text-ink-300 opacity-0 transition hover:bg-void-700 hover:text-ink-100 group-hover:opacity-100"
+      className="rounded-sm p-1 text-ink-300 opacity-0 transition hover:bg-void-700 hover:text-ink-100 group-hover:opacity-100"
     >
       <MoreHorizontal className="h-3.5 w-3.5" />
     </button>

@@ -88,7 +88,7 @@ export function CallPanel({
           )
         )}
         {state.screenSharing && (
-          <span className="ml-auto flex items-center gap-1 rounded bg-violet-600/30 px-1.5 py-0.5 text-[10px] font-semibold text-violet-300">
+          <span className="ml-auto flex items-center gap-1 rounded-sm bg-violet-600/30 px-1.5 py-0.5 text-[10px] font-semibold text-violet-300">
             <Monitor className="h-2.5 w-2.5" />
             ao vivo
           </span>
@@ -96,14 +96,14 @@ export function CallPanel({
       </header>
 
       {state.error && (
-        <p className="mb-2 rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-300">
+        <p className="mb-2 rounded-sm border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-300">
           {state.error}
         </p>
       )}
 
       <div className="mb-2 space-y-0.5">
         {/* Voce */}
-        <div className="flex items-center gap-2 rounded px-1 py-1">
+        <div className="flex items-center gap-2 rounded-sm px-1 py-1">
           <div className="relative">
             <Avatar name={selfName} userKey={selfKey} size={26} />
             {falando && (
@@ -137,7 +137,7 @@ export function CallPanel({
                 anchor: { x: rect.right + 4, y: rect.top },
               });
             }}
-            className="flex w-full items-center gap-2 rounded px-1 py-1 text-left transition hover:bg-void-700/60"
+            className="flex w-full items-center gap-2 rounded-sm px-1 py-1 text-left transition hover:bg-void-700/60"
           >
             <div className="relative shrink-0">
               <Avatar name={p.name} userKey={p.key} size={26} />
@@ -242,7 +242,7 @@ export function CallPanel({
         <button
           onClick={onLeave}
           title="Sair da chamada"
-          className="flex-1 rounded bg-status-dnd/15 p-1.5 text-status-dnd transition hover:bg-status-dnd/30"
+          className="flex-1 rounded-sm bg-status-dnd/15 p-1.5 text-status-dnd transition hover:bg-status-dnd/30"
         >
           <PhoneOff className="mx-auto h-4 w-4" />
         </button>

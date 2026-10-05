@@ -179,7 +179,7 @@ function Viewer({
             if (videoRef.current) videoRef.current.muted = !muted;
           }}
           title={muted ? 'Ativar som' : 'Silenciar'}
-          className="rounded p-1 text-ink-400 transition hover:bg-void-700 hover:text-violet-300"
+          className="rounded-sm p-1 text-ink-400 transition hover:bg-void-700 hover:text-violet-300"
         >
           {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
         </button>
@@ -196,7 +196,7 @@ function Viewer({
       <button
         onClick={togglePip}
         title="Picture-in-picture"
-        className="rounded p-1 text-ink-400 transition hover:bg-void-700 hover:text-violet-300"
+        className="rounded-sm p-1 text-ink-400 transition hover:bg-void-700 hover:text-violet-300"
       >
         <PictureInPicture2 className="h-3.5 w-3.5" />
       </button>
@@ -204,7 +204,7 @@ function Viewer({
   );
 
   const painelStats = showStats && stats && (
-    <div className="absolute left-2 top-2 rounded bg-black/80 px-2 py-1 font-mono text-[10px] text-violet-200">
+    <div className="absolute left-2 top-2 rounded-sm bg-black/80 px-2 py-1 font-mono text-[10px] text-violet-200">
       <div>
         {stats.width}x{stats.height}
       </div>
@@ -214,7 +214,7 @@ function Viewer({
 
   if (expanded) {
     return (
-      <div className="fixed inset-0 z-[80] flex flex-col bg-black">
+      <div className="fixed inset-0 z-80 flex flex-col bg-black">
         <div className="flex items-center gap-2 bg-void-900 px-3 py-2">
           <Monitor className="h-3.5 w-3.5 text-violet-400" />
           <span className="flex-1 text-xs font-semibold text-violet-200">
@@ -225,7 +225,7 @@ function Viewer({
           </span>
           <button
             onClick={() => setZoom((z) => Math.max(1, z - 0.25))}
-            className="rounded p-1 text-ink-400 hover:bg-void-700 hover:text-violet-300"
+            className="rounded-sm p-1 text-ink-400 hover:bg-void-700 hover:text-violet-300"
             title="Menos zoom"
           >
             <ZoomOut className="h-3.5 w-3.5" />
@@ -235,7 +235,7 @@ function Viewer({
           </span>
           <button
             onClick={() => setZoom((z) => Math.min(5, z + 0.25))}
-            className="rounded p-1 text-ink-400 hover:bg-void-700 hover:text-violet-300"
+            className="rounded-sm p-1 text-ink-400 hover:bg-void-700 hover:text-violet-300"
             title="Mais zoom"
           >
             <ZoomIn className="h-3.5 w-3.5" />
@@ -244,13 +244,13 @@ function Viewer({
           <button
             onClick={toggleFullscreen}
             title="Tela cheia — tecla F"
-            className="rounded p-1 text-ink-400 hover:bg-void-700 hover:text-violet-300"
+            className="rounded-sm p-1 text-ink-400 hover:bg-void-700 hover:text-violet-300"
           >
             <Expand className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={() => setExpanded(false)}
-            className="rounded p-1 text-ink-400 hover:bg-void-700 hover:text-ink-100"
+            className="rounded-sm p-1 text-ink-400 hover:bg-void-700 hover:text-ink-100"
             title="Reduzir"
           >
             <Minimize2 className="h-3.5 w-3.5" />
@@ -294,14 +294,14 @@ function Viewer({
           {controles}
           <button
             onClick={() => setExpanded(true)}
-            className="rounded p-1 text-ink-400 hover:bg-void-700 hover:text-violet-300"
+            className="rounded-sm p-1 text-ink-400 hover:bg-void-700 hover:text-violet-300"
             title="Tela cheia"
           >
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={onClose}
-            className="rounded p-1 text-ink-400 hover:bg-status-dnd/20 hover:text-status-dnd"
+            className="rounded-sm p-1 text-ink-400 hover:bg-status-dnd/20 hover:text-status-dnd"
             title="Ocultar"
           >
             <X className="h-3.5 w-3.5" />

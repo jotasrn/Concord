@@ -70,7 +70,7 @@ export function MessageText({ content }: { content: string }) {
   if (ultimo < content.length) partes.push(content.slice(ultimo));
 
   return (
-    <p className="selectable whitespace-pre-wrap break-words text-sm text-ink-200">
+    <p className="selectable whitespace-pre-wrap wrap-break-word text-sm text-ink-200">
       {partes.length > 0 ? partes : content}
     </p>
   );

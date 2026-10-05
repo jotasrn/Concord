@@ -128,7 +128,7 @@ function TileCard({
       )}
 
       {/* Faixa inferior com nome e estado */}
-      <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-black/90 to-transparent px-2.5 py-2">
+      <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-linear-to-t from-black/90 to-transparent px-2.5 py-2">
         <span className="flex-1 truncate text-xs font-semibold text-ink-100">
           {tile.name}
           {tile.isSelf && <span className="ml-1 text-ink-400">(voce)</span>}
@@ -171,14 +171,14 @@ function TileCard({
       {tile.pinned && (
         <span
           title="Fixado no palco"
-          className="absolute right-2 top-2 rounded bg-violet-600/90 p-1 text-white"
+          className="absolute right-2 top-2 rounded-sm bg-violet-600/90 p-1 text-white"
         >
           <Pin className="h-3 w-3" />
         </span>
       )}
 
       {tile.connection && tile.connection !== 'connected' && (
-        <span className="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-status-idle">
+        <span className="absolute left-2 top-2 rounded-sm bg-black/70 px-1.5 py-0.5 text-[10px] text-status-idle">
           {tile.connection}
         </span>
       )}
@@ -339,7 +339,7 @@ export function CallStage({
       </header>
 
       {state.error && (
-        <p className="mx-4 mt-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+        <p className="mx-4 mt-3 rounded-sm border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
           {state.error}
         </p>
       )}
@@ -365,7 +365,7 @@ export function CallStage({
                   </div>
                 </div>
               )}
-              <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/90 to-transparent px-3 py-2">
+              <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-linear-to-t from-black/90 to-transparent px-3 py-2">
                 <span className="flex-1 text-xs font-semibold text-ink-100">
                   {emDestaque.name}
                   {emDestaque.isSelf && <span className="ml-1 text-ink-400">(voce)</span>}
@@ -373,7 +373,7 @@ export function CallStage({
                 <button
                   onClick={() => onTogglePin(emDestaque.key)}
                   title="Desafixar do palco"
-                  className="rounded bg-black/60 p-1.5 text-ink-200 hover:text-violet-300"
+                  className="rounded-sm bg-black/60 p-1.5 text-ink-200 hover:text-violet-300"
                 >
                   <PinOff className="h-3.5 w-3.5" />
                 </button>

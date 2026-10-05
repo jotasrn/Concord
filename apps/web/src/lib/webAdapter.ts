@@ -30,19 +30,70 @@ function onPush(type: string, handler: (...args: unknown[]) => void): () => void
   return () => pushHandlers.get(type)?.delete(handler);
 }
 
+/** Mesmo valor de CLOSE_REPLACED em apps/server/src/wsHandler.ts. */
+const CLOSE_REPLACED = 4001;
+const DEVICE_KEY = 'concord.device';
+
+/**
+ * Token aleatorio que identifica este navegador para a ponte. E o que faz a
+ * conta sobreviver a um F5: a ponte guarda os dados na pasta derivada dele.
+ * Nao e a senha - a chave privada continua cifrada e so abre com ela.
+ */
+export function deviceToken(storage: Pick<Storage, 'getItem' | 'setItem'> | null = safeStorage()): string {
+  const salvo = storage?.getItem(DEVICE_KEY);
+  if (salvo && /^[0-9a-f]{64}$/.test(salvo)) return salvo;
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const novo = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  try {
+    storage?.setItem(DEVICE_KEY, novo);
+  } catch {
+    // Armazenamento bloqueado (aba anonima restrita): segue so nesta pagina.
+  }
+  return novo;
+}
+
+function safeStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+let jaConectou = false;
+
 function connect(): Promise<void> {
   return new Promise((resolve, reject) => {
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const url = `${protocol}://${location.host}/ws`;
-    ws = new WebSocket(url);
+    const socket = new WebSocket(url);
+    ws = socket;
 
-    ws.onopen = () => resolve();
-    ws.onerror = () => reject(new Error('Nao foi possivel conectar ao servidor Concord'));
+    socket.onopen = () => {
+      call<boolean>('session:hello', deviceToken())
+        .then(() => {
+          if (jaConectou) {
+            // A ponte reiniciou ou a rede caiu: a sessao de la voltou
+            // bloqueada. Recarregar leva para a tela de desbloqueio em vez de
+            // deixar a interface chamando uma conta que nao esta aberta.
+            location.reload();
+            return;
+          }
+          jaConectou = true;
+          resolve();
+        })
+        .catch(reject);
+    };
+    socket.onerror = () => reject(new Error('Nao foi possivel conectar ao servidor Concord'));
 
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data as string) as
-        | Reply<unknown>
-        | { type: string; [key: string]: unknown };
+    socket.onmessage = (event) => {
+      let msg: Reply<unknown> | { type: string; [key: string]: unknown };
+      try {
+        msg = JSON.parse(event.data as string);
+      } catch {
+        return;
+      }
 
       // Evento push (sem id de requisicao)
       if ('type' in msg && !('id' in msg)) {
@@ -68,10 +119,16 @@ function connect(): Promise<void> {
       else p.reject(new Error(r.error));
     };
 
-    ws.onclose = () => {
+    socket.onclose = (event) => {
       // Rejeita todas as chamadas pendentes
       for (const p of pending.values()) p.reject(new Error('Conexao perdida'));
       pending.clear();
+      if (event.code === CLOSE_REPLACED) {
+        // Outra aba assumiu este dispositivo. Reconectar aqui derrubaria a
+        // outra, que derrubaria esta, para sempre.
+        document.title = 'Concord (aberto em outra aba)';
+        return;
+      }
       // Tenta reconectar em 3s
       setTimeout(() => void connect().catch(() => undefined), 3000);
     };

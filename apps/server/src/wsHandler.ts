@@ -1,7 +1,17 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { v4 as uuidv4 } from 'uuid';
+import type { IncomingMessage } from 'node:http';
+import { cpus, totalmem } from 'node:os';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Session } from './session';
+import { deviceDir, ensureDir, isValidDeviceToken, removeIfEmpty } from './devices';
+import {
+  ConnectionLimiter,
+  LimitConfig,
+  UnlockGuard,
+  WindowRateLimiter,
+  clientIp,
+} from './limits';
 
 type Reply<T> = { id: string; ok: true; data: T } | { id: string; ok: false; error: string };
 
@@ -12,29 +22,100 @@ function replyErr(id: string, error: string): Reply<never> {
   return { id, ok: false, error };
 }
 
-/**
- * Cada conexao WebSocket tem sua propria Session isolada.
- * Isso garante que dois usuarios no mesmo servidor nao compartilhem estado.
- */
-export function createWsHandler(wss: WebSocketServer, dataDir: string): void {
-  wss.on('connection', (ws: WebSocket) => {
-    const clientId = uuidv4();
-    console.log(`[ws] conexao ${clientId}`);
+/** Fechamento quando o mesmo dispositivo abre em outra aba - o cliente nao reconecta. */
+export const CLOSE_REPLACED = 4001;
+/** Cliente nao se identificou a tempo ou mandou token invalido. */
+export const CLOSE_BAD_HELLO = 4002;
 
-    const sessionDir = join(dataDir, clientId);
-    const session = new Session(
-      sessionDir,
-      (serverId) => send({ type: 'sync:updated', serverId }),
-      (serverId, signal) => send({ type: 'voice:incoming', serverId, signal }),
-      (info) => send({ type: 'migration:notice', info }),
-      (snapshot) => send({ type: 'presence:update', peers: snapshot }),
-      (evento, dados) => send({ type: 'social:event', evento, dados }),
-    );
+export interface WsHandlerOptions {
+  dataDir: string;
+  limits: LimitConfig;
+  trustProxy: boolean;
+}
+
+interface Ativo {
+  ws: WebSocket;
+  /** Resolve quando a sessao terminou de fechar (SQLite e no P2P liberados). */
+  encerrada: Promise<void>;
+}
+
+/**
+ * Cada dispositivo (token gerado pelo navegador) tem sua pasta e no maximo uma
+ * Session viva. Recarregar a pagina reabre a mesma conta; abrir uma segunda
+ * aba derruba a primeira, em vez de abrir o mesmo SQLite duas vezes e subir
+ * dois nos P2P com a mesma identidade.
+ */
+export function createWsHandler(wss: WebSocketServer, opts: WsHandlerOptions): {
+  activeDirs: () => Set<string>;
+} {
+  const { dataDir, limits } = opts;
+  const limiter = new ConnectionLimiter(limits.maxSessions, limits.maxSessionsPerIp);
+  const ativos = new Map<string, Ativo>();
+
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    const ip = clientIp(req.socket.remoteAddress, req.headers['x-forwarded-for'], opts.trustProxy);
+    const recusa = limiter.acquire(ip);
+    if (recusa) {
+      ws.close(1013, recusa);
+      return;
+    }
+
+    let session: Session | null = null;
+    // Impede dois hello simultaneos na mesma conexao, ambos esperando a aba
+    // anterior fechar e depois abrindo duas sessoes na mesma pasta.
+    let helloEmAndamento = false;
+    let dir: string | null = null;
+    let fimDaSessao: () => void = () => undefined;
+    const chamadas = new WindowRateLimiter(limits.callsPerWindow, limits.callWindowMs);
+    const ctx: Contexto = {
+      session: null as unknown as Session,
+      unlockGuard: new UnlockGuard(limits.maxUnlockFailures, limits.unlockLockoutMs),
+      messageBuckets: new Map(),
+      settingsPath: '',
+    };
+
+    const helloTimer = setTimeout(() => {
+      if (!session) ws.close(CLOSE_BAD_HELLO, 'Identificacao nao recebida');
+    }, limits.helloTimeoutMs);
 
     function send(payload: unknown): void {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(payload));
       }
+    }
+
+    async function hello(token: unknown): Promise<void> {
+      if (session || helloEmAndamento) throw new Error('Sessao ja identificada');
+      helloEmAndamento = true;
+      if (!isValidDeviceToken(token)) {
+        ws.close(CLOSE_BAD_HELLO, 'Token de dispositivo invalido');
+        throw new Error('Token de dispositivo invalido');
+      }
+      const alvo = deviceDir(dataDir, token);
+
+      // Mesma pasta aberta em outra conexao: fecha a antiga e espera ela
+      // soltar o SQLite antes de abrir de novo.
+      const anterior = ativos.get(alvo);
+      if (anterior) {
+        anterior.ws.close(CLOSE_REPLACED, 'Aberto em outra aba');
+        await anterior.encerrada;
+      }
+      if (ws.readyState !== WebSocket.OPEN) throw new Error('Conexao encerrada');
+
+      ensureDir(alvo);
+      dir = alvo;
+      session = new Session(
+        alvo,
+        (serverId) => send({ type: 'sync:updated', serverId }),
+        (serverId, signal) => send({ type: 'voice:incoming', serverId, signal }),
+        (info) => send({ type: 'migration:notice', info }),
+        (snapshot) => send({ type: 'presence:update', peers: snapshot }),
+        (evento, dados) => send({ type: 'social:event', evento, dados }),
+      );
+      ctx.session = session;
+      ctx.settingsPath = join(alvo, 'settings.json');
+      ativos.set(alvo, { ws, encerrada: new Promise<void>((r) => (fimDaSessao = r)) });
+      clearTimeout(helloTimer);
     }
 
     ws.on('message', async (raw: import('ws').RawData) => {
@@ -45,20 +126,69 @@ export function createWsHandler(wss: WebSocketServer, dataDir: string): void {
           channel: string;
           args: unknown[];
         };
-        msgId = msg.id;
-        const result = await dispatch(session, msg.channel, msg.args ?? []);
-        ws.send(JSON.stringify(reply(msgId, result)));
+        if (!msg || typeof msg !== 'object' || typeof msg.channel !== 'string') {
+          throw new Error('Mensagem malformada');
+        }
+        msgId = typeof msg.id === 'string' ? msg.id.slice(0, 64) : 'unknown';
+        const args = Array.isArray(msg.args) ? msg.args : [];
+
+        if (!chamadas.take()) {
+          throw new Error(`Requisicoes demais. Aguarde ${chamadas.retryAfterSeconds()}s.`);
+        }
+
+        if (msg.channel === 'session:hello') {
+          await hello(args[0]);
+          send(reply(msgId, true));
+          return;
+        }
+        if (!session) throw new Error('Sessao nao identificada');
+
+        const result = await dispatch(ctx, msg.channel, args);
+        send(reply(msgId, result));
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Erro inesperado';
-        ws.send(JSON.stringify(replyErr(msgId, message)));
+        send(replyErr(msgId, message));
       }
     });
 
+    // Sem este listener, um erro de protocolo (ex.: mensagem acima de
+    // maxPayload) vira excecao nao tratada e derruba o processo inteiro da
+    // ponte - todos os usuarios juntos. O ws ja fecha a conexao sozinho.
+    ws.on('error', (err) => {
+      console.warn(`[ws] erro de protocolo de ${ip}: ${err.message}`);
+    });
+
     ws.on('close', () => {
-      console.log(`[ws] desconexao ${clientId}`);
-      void session.shutdown();
+      clearTimeout(helloTimer);
+      limiter.release(ip);
+      const s = session;
+      const d = dir;
+      if (!s || !d) return;
+      void s
+        .shutdown()
+        .catch((err) => console.error('[ws] erro ao encerrar sessao', err))
+        .finally(() => {
+          if (ativos.get(d)?.ws === ws) ativos.delete(d);
+          // Pasta de quem abriu a pagina e nunca criou conta: nada a guardar.
+          try {
+            removeIfEmpty(d);
+          } catch (err) {
+            console.error('[ws] erro ao limpar pasta', err);
+          }
+          fimDaSessao();
+        });
     });
   });
+
+  return { activeDirs: () => new Set(ativos.keys()) };
+}
+
+interface Contexto {
+  session: Session;
+  unlockGuard: UnlockGuard;
+  /** Rate-limit de mensagens por canal, desta conexao - nao global. */
+  messageBuckets: Map<string, RateBucket>;
+  settingsPath: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,13 +197,17 @@ export function createWsHandler(wss: WebSocketServer, dataDir: string): void {
 interface RateBucket { count: number; resetAt: number; }
 const MESSAGE_LIMIT = 5;
 const MESSAGE_WINDOW_MS = 3_000;
-const rateBuckets = new Map<string, RateBucket>();
 
-function checkRateLimit(channelId: string): void {
+/**
+ * Antes o mapa era global e indexado so pelo canal: um usuario mandando
+ * mensagens bloqueava todos os outros usuarios da ponte naquele canal, e o
+ * mapa crescia para sempre. Agora cada conexao tem o seu.
+ */
+function checkRateLimit(buckets: Map<string, RateBucket>, channelId: string): void {
   const now = Date.now();
-  const bucket = rateBuckets.get(channelId);
+  const bucket = buckets.get(channelId);
   if (!bucket || now >= bucket.resetAt) {
-    rateBuckets.set(channelId, { count: 1, resetAt: now + MESSAGE_WINDOW_MS });
+    buckets.set(channelId, { count: 1, resetAt: now + MESSAGE_WINDOW_MS });
     return;
   }
   if (bucket.count >= MESSAGE_LIMIT) {
@@ -81,6 +215,38 @@ function checkRateLimit(channelId: string): void {
     throw new Error(`Muitas mensagens. Aguarde ${wait}s antes de enviar novamente.`);
   }
   bucket.count += 1;
+}
+
+// ---------------------------------------------------------------------------
+// Configuracoes por dispositivo
+// ---------------------------------------------------------------------------
+const DEFAULT_WEB_SETTINGS = {
+  resources: {
+    maxHeapMb: null,
+    maxCores: null,
+    maxStorageMb: null,
+    runInBackground: true,
+    startWithSystem: false,
+  },
+  video: {
+    cameraDeviceId: null,
+    cameraHeight: 720,
+    cameraFrameRate: 30,
+    screenPresetId: 'gaming',
+  },
+};
+
+function readWebSettings(path: string): typeof DEFAULT_WEB_SETTINGS {
+  try {
+    if (!existsSync(path)) return DEFAULT_WEB_SETTINGS;
+    const bruto = JSON.parse(readFileSync(path, 'utf8')) as Partial<typeof DEFAULT_WEB_SETTINGS>;
+    return {
+      resources: { ...DEFAULT_WEB_SETTINGS.resources, ...bruto.resources },
+      video: { ...DEFAULT_WEB_SETTINGS.video, ...bruto.video },
+    };
+  } catch {
+    return DEFAULT_WEB_SETTINGS;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +270,8 @@ function sanitizeContent(raw: string): string {
 // ---------------------------------------------------------------------------
 // Dispatcher — espelha os handlers IPC do Electron
 // ---------------------------------------------------------------------------
-async function dispatch(session: Session, channel: string, args: unknown[]): Promise<unknown> {
+async function dispatch(ctx: Contexto, channel: string, args: unknown[]): Promise<unknown> {
+  const { session } = ctx;
   switch (channel) {
     // --- conta ---
     case 'account:status':
@@ -132,7 +299,16 @@ async function dispatch(session: Session, channel: string, args: unknown[]): Pro
     }
     case 'account:unlock': {
       const [password] = args as [string];
-      const identity = await session.unlock(password);
+      if (typeof password !== 'string') throw new Error('Senha invalida');
+      if (session.isUnlocked()) return session.profile();
+      ctx.unlockGuard.assertAllowed();
+      try {
+        await session.unlock(password);
+      } catch (err) {
+        ctx.unlockGuard.fail();
+        throw err;
+      }
+      ctx.unlockGuard.succeed();
       return session.profile();
     }
     case 'account:profile':
@@ -220,7 +396,7 @@ async function dispatch(session: Session, channel: string, args: unknown[]): Pro
       const [serverId, channelId, content] = args as [string, string, string];
       const sid = assertId(serverId, 'serverId');
       const cid = assertId(channelId, 'channelId');
-      checkRateLimit(cid);
+      checkRateLimit(ctx.messageBuckets, cid);
       const trimmed = sanitizeContent(content).trim();
       if (!trimmed) throw new Error('Mensagem vazia');
       if (trimmed.length > 4000) throw new Error('Mensagem muito longa');
@@ -321,6 +497,20 @@ async function dispatch(session: Session, channel: string, args: unknown[]): Pro
     }
 
     // --- configuracoes ---
+    case 'settings:get':
+      // Existia no cliente web mas nao aqui: a tela de configuracoes quebrava
+      // com "Canal IPC desconhecido".
+      return {
+        settings: readWebSettings(ctx.settingsPath),
+        machine: { cores: cpus().length, totalMemoryMb: Math.round(totalmem() / 1024 / 1024) },
+      };
+    case 'settings:save': {
+      const [settings] = args as [unknown];
+      const bruto = JSON.stringify(settings ?? {});
+      if (bruto.length > 4096) throw new Error('Configuracoes grandes demais');
+      writeFileSync(ctx.settingsPath, bruto, 'utf8');
+      return true;
+    }
     case 'settings:usage':
       return session.storageUsage();
     case 'settings:prune': {

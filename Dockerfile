@@ -6,13 +6,13 @@ COPY package.json package-lock.json ./
 COPY packages/ packages/
 COPY apps/server/ apps/server/
 COPY apps/web/ apps/web/
-RUN npm ci --workspace=packages/types --workspace=packages/shared --workspace=packages/core \
+RUN npm ci --workspace=packages/types --workspace=packages/core \
     --workspace=apps/web --workspace=apps/server
 
 # Build dos pacotes core
 FROM base AS builder
 RUN npm run build --workspace=packages/types
-RUN npm run build --workspace=packages/shared
+RUN npm run build
 RUN npm run build --workspace=packages/core
 
 # Build do frontend React

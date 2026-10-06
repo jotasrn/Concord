@@ -30,6 +30,12 @@ Os sinais em si (`join`, `offer`, `answer`, `ice`, `state`, `leave`) sao os
 mesmos nos dois casos - so muda o envelope que carrega cada um ate o peer
 certo.
 
+Antes de sair para a rede, todo sinal passa por `parseVoiceSignal`
+(`packages/core/src/p2p/protocol.ts`), no processo principal ou na ponte web:
+tipo conhecido, `channelId` de ate 128 caracteres, `to` como chave hex valida
+e no maximo 64 KB de dados. Um SDP com video e simulcast fica em poucos KB;
+o teto so barra lixo e abuso.
+
 ## Perfect negotiation
 
 Dois peers podem tentar renegociar ao mesmo tempo (ex: os dois comecam a
@@ -81,6 +87,26 @@ funcionar - a conexao so fica presa. Um temporizador de 4s forca
 `restartIce()` se o estado nao se resolver sozinho nesse tempo.
 `reconnectAll()` (botao manual na interface) faz o mesmo para todos os peers
 de uma vez, para quando a recuperacao automatica ainda nao agiu.
+
+## Como e testado
+
+WebRTC de verdade exige navegador e rede, entao os testes usam um WebRTC
+simulado (`transport/fakeWebRtc.ts`) que reproduz o que importa para a
+sinalizacao: a maquina de estados (`stable` / `have-local-offer` /
+`have-remote-offer`), o rollback implicito do lado polite, candidates que
+exigem descricao remota e a chegada de faixas quando uma m-line nova aparece.
+Midia nao trafega - nao e o que esta sendo testado.
+
+`PeerToPeerTransport.test.ts` liga dois transportes por uma "rede" em memoria
+e cobre: conexao entre dois peers, colisao de offers, candidates antes da
+offer, a fila por peer, `leave`/`disconnect`, tela (chegada, parada, reuso do
+transceiver, ordem de codecs, pedido de reenvio apos 5s com reinicio de ICE)
+e a recuperacao de `disconnected`/`failed`. `lowLatency.test.ts` cobre a
+reescrita do SDP e a leitura de latencia.
+
+A suite foi conferida por mutacao: inverter quem e polite, tirar o buffer de
+candidates, tirar a fila, tirar o temporizador de recuperacao ou ignorar
+`leave` faz um teste falhar em cada caso.
 
 ## Sem TURN
 

@@ -37,8 +37,13 @@ win:
     # instalacao e qualquer pedido de elevacao.
     - target: zip
       arch: [x64]
-  artifactName: Concord-${version}-${ext}.${ext}
+  # Nomes legiveis para quem baixa. O zip usa este; o instalador sobrescreve
+  # no bloco nsis. Copias sem versao no nome (Concord-Setup.exe e
+  # Concord-Portable.zip) sao anexadas pelo release.yml para que o link
+  # .../releases/latest/download/... nunca mude.
+  artifactName: Concord-Portable-${version}.${ext}
 nsis:
+  artifactName: Concord-Setup-${version}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

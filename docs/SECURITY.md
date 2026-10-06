@@ -58,7 +58,7 @@ le a coluna direto passaria a abrir/fechar o Vault) e ainda deixaria o
 o conteudo. Fica registrado aqui para nao haver duvida sobre o que o Vault
 protege de fato.
 
-Testes (`vault.test.ts`, `keystore.test.ts`) verificam que o arquivo em disco
+Testes (`crypto/vault.test.ts`, `identity/identity.test.ts`) verificam que o arquivo em disco
 nao contem nenhuma palavra da frase de recuperacao nem o texto de uma
 mensagem - so isso, nada alem disso.
 
@@ -76,6 +76,17 @@ serem aplicadas.
 
 Testes adversariais dedicados em `ops/hostile.test.ts` cobrem exatamente esses
 casos.
+
+### Sinais de voz vindos da interface
+
+Sinalizacao WebRTC nao vai para o log, mas e cifrada e difundida para todos os
+peers do servidor. Antes ela atravessava o IPC como `any`, sem checagem: um
+renderer comprometido podia difundir qualquer objeto, de qualquer tamanho.
+Agora `parseVoiceSignal` (`p2p/protocol.ts`) valida no processo principal (e
+na ponte web) o tipo do sinal, o destinatario (chave hex de 64 caracteres),
+o tamanho (ate 64 KB) e descarta o `from` declarado - o no sempre preenche com
+a propria chave. Do lado de quem recebe, o `from` tambem e sobrescrito pela
+identidade provada na conexao.
 
 ## Moderacao e a regra do "so o receptor decide"
 
@@ -96,8 +107,10 @@ fazer e parar de aceitar as operacoes dele. Por isso:
 
 ## Seguranca do executavel
 
-- `contextIsolation: true`, `nodeIntegration: false`: o renderer nunca tem
-  `require`. Toda operacao privilegiada passa pelo IPC, que valida a entrada.
+- **Electron 42**, dentro do ciclo de suporte. O renderer roda com
+  `sandbox: true`, `contextIsolation: true` e `nodeIntegration: false`: nunca
+  tem `require`. Toda operacao privilegiada passa pelo IPC, que valida a
+  entrada.
 - DevTools bloqueado em producao (atalhos interceptados, `devtools-opened`
   fecha na hora). Nao impede alguem de extrair o `asar` manualmente, mas tira
   o caminho de um clique.
@@ -105,10 +118,61 @@ fazer e parar de aceitar as operacoes dele. Por isso:
   inteiro, comentarios inclusive; empacotar isso equivaleria a distribuir o
   codigo-fonte.
 - Fuses do Electron gravados apos empacotar (`scripts/afterPack.js`):
-  `RunAsNode` desligado, validacao de integridade do asar ligada.
+  `RunAsNode`, `NODE_OPTIONS` e `--inspect` desligados; so carrega codigo de
+  dentro do asar e valida a integridade dele ao iniciar.
 - Navegacao para fora do app e bloqueada (`will-navigate`); links em
   mensagens abrem no navegador do sistema, nunca dentro da janela do
   Concord.
+- `shell.openExternal` so recebe `http`/`https`: `file://`, `ms-settings:` e
+  outros esquemas sao recusados.
+
+## Dependencias
+
+O CI roda `npm audit --audit-level=high` em todo push e PR, e o passo e
+**bloqueante**: uma vulnerabilidade alta ou critica em qualquer dependencia,
+direta ou transitiva, quebra o build. A arvore estava com 29 (2 criticas)
+quando esse passo ainda era so informativo; foi zerada atualizando Electron,
+electron-builder, better-sqlite3, Vite, Vitest e Tailwind. O Dependabot
+(`.github/dependabot.yml`) abre PRs de atualizacao, e o CodeQL analisa o
+codigo em todo push.
+
+## Ponte web (`apps/server`)
+
+A ponte e opcional e so existe para usar o Concord pelo navegador. Ela roda o
+core num servidor, entao tem uma superficie que o app desktop nao tem: aceita
+conexoes de qualquer um na internet.
+
+- **Um dispositivo, uma pasta.** O navegador gera um token aleatorio de 32
+  bytes e o guarda no `localStorage`. A pasta da conta e
+  `DATA_DIR/devices/<sha256 do token>`; o token em si nunca vai para o disco,
+  entao quem le a pasta de dados nao consegue se passar pelo dispositivo. O
+  token nao substitui a senha: a chave privada continua cifrada no keystore.
+- **Identificacao obrigatoria.** Nenhum canal responde antes do
+  `session:hello` com um token valido; quem nao se identifica em 10 segundos e
+  desconectado. Token fora do formato (inclusive tentativa de path traversal)
+  derruba a conexao sem criar pasta.
+- **Uma sessao por dispositivo.** Uma segunda aba com o mesmo token fecha a
+  primeira e espera ela soltar o banco antes de abrir de novo - nunca dois
+  nos P2P com a mesma identidade.
+- **Limites**, todos configuraveis por variavel de ambiente: sessoes
+  simultaneas no total e por IP, tamanho maximo de mensagem (`maxPayload`),
+  chamadas por segundo por conexao, e trava de um minuto apos cinco senhas
+  erradas.
+- **Origin verificado no handshake.** Pagina de outro dominio e recusada antes
+  de abrir o WebSocket (Cross-Site WebSocket Hijacking). `X-Forwarded-For` so
+  e usado como IP do cliente com `TRUST_PROXY` ligado, senao qualquer um
+  forjaria o header para fugir do limite por IP.
+- **Faxina.** Pastas sem conta sao apagadas ao desconectar, na inicializacao e
+  a cada hora - abrir conexoes em massa nao enche mais o disco.
+- Um erro de protocolo numa conexao (ex.: mensagem acima do limite) nao derruba
+  mais o processo inteiro.
+
+Testes de integracao com WebSocket de verdade em `apps/server/src/wsHandler.test.ts`.
+Configuracao de deploy em [DEPLOY_WEB.md](DEPLOY_WEB.md).
+
+O que a ponte **nao** resolve: quem administra o servidor da ponte tem acesso
+ao processo onde a chave fica destrancada enquanto a sessao esta aberta. Use
+uma ponte que voce mesmo hospeda, ou o app desktop.
 
 ## Revisao externa (commit 72edf04) - o que foi corrigido
 
@@ -161,13 +225,11 @@ todo `npm test`.
   mensagens futuras, porque a chave nunca roda. Rotacionar ao expulsar
   exigiria reenviar a chave nova a cada membro restante (sender keys ou algo
   como MLS), uma mudanca de protocolo maior que o escopo desta rodada.
-- **A ponte web (`apps/server`) nao tem autenticacao nem limite por conexao.**
-  Cada WebSocket que conecta cria um no Hyperswarm e um diretorio proprios,
-  sem checagem nenhuma. Nao deveria rodar em producao exposta sem isso -
-  veja [DEPLOY_WEB.md](DEPLOY_WEB.md).
-- **Electron 32 esta fora do ciclo de suporte.** Atualizar exige testar a
-  build inteira (modulos nativos, empacotamento) numa maquina real antes de
-  distribuir - nao e algo para trocar as pressas.
+- **Metadados em texto claro no disco** - ver [Em repouso](#em-repouso).
+
+Resolvidos desde a primeira versao desta lista: a ponte web sem limite nem
+identificacao (ver [Ponte web](#ponte-web-appsserver)) e o Electron 32 fora
+de suporte (agora 42).
 
 ## O que isso nao cobre
 

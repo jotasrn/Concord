@@ -11,6 +11,26 @@ sem autoridade central para recuperar senha, arbitrar apelido duplicado ou
 apagar o historico de quem foi expulso. Detalhes da decisao em
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Baixar
+
+<p>
+  <a href="https://github.com/jotasrn/Concord/releases/latest/download/Concord-Setup.exe">
+    <img alt="Baixar instalador para Windows" src="https://img.shields.io/badge/Baixar-Instalador%20Windows-8B5CF6?style=for-the-badge&logo=windows&logoColor=white">
+  </a>
+  <a href="https://github.com/jotasrn/Concord/releases/latest/download/Concord-Portable.zip">
+    <img alt="Baixar versao portatil" src="https://img.shields.io/badge/Baixar-Port%C3%A1til%20(.zip)-24242E?style=for-the-badge&logo=files&logoColor=white">
+  </a>
+</p>
+
+Windows 10/11, 64 bits. Os botoes baixam sempre a versao mais nova.
+Passo a passo de instalacao, o aviso do SmartScreen, onde ficam os dados e
+problemas comuns: **[download/](download/README.md)**.
+
+Depois de instalado o app se atualiza sozinho.
+
+[![CI](https://github.com/jotasrn/Concord/actions/workflows/ci.yml/badge.svg)](https://github.com/jotasrn/Concord/actions/workflows/ci.yml)
+![Versao](https://img.shields.io/github/v/release/jotasrn/Concord?label=versao&color=8B5CF6)
+
 ## O que ja funciona
 
 - **Servidores e canais** - texto e voz, com convite cifrado ponta a ponta
@@ -31,8 +51,9 @@ apagar o historico de quem foi expulso. Detalhes da decisao em
   armazenamento
 - **Atualizacao automatica** - via GitHub Releases, nunca reinicia com
   chamada em andamento (veja [docs/ATUALIZACAO.md](docs/ATUALIZACAO.md))
-- **Seguranca do executavel** - DevTools bloqueado em producao, sem
-  sourcemap, fuses do Electron (sem `RUN_AS_NODE`, integridade do asar)
+- **Seguranca do executavel** - Electron 42 com sandbox, DevTools bloqueado
+  em producao, sem sourcemap, fuses do Electron (sem `RUN_AS_NODE`,
+  integridade do asar)
 
 Pendente: transmissao de webcam durante a chamada (a captura ja existe nas
 configuracoes; falta ligar ao transporte).
@@ -50,7 +71,9 @@ apps/web/       Interface (React) - roda dentro do Electron OU no navegador
 apps/server/    Ponte WebSocket opcional p/ acessar pelo navegador (ver abaixo)
 packages/core/  O nucleo: identidade, log assinado, SQLite, rede P2P
 packages/types/ Contratos TypeScript compartilhados
-docs/           Arquitetura, seguranca, atualizacao, deploy web
+packages/config Configuracao base do TypeScript
+download/       Como baixar e instalar (para quem so quer usar o app)
+docs/           Arquitetura, seguranca, atualizacao, WebRTC, deploy web
 ```
 
 Descricao arquivo por arquivo em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -82,8 +105,9 @@ npm run dist
 ```
 
 Sai em `%LOCALAPPDATA%\Concord-build\release` (fora do repositorio de
-proposito - OneDrive trava o `asar` no meio do empacotamento). Produz um
-instalador NSIS e uma versao `.zip` sem instalacao.
+proposito - OneDrive trava o `asar` no meio do empacotamento). Produz o
+instalador `Concord-Setup-<versao>.exe` e a versao sem instalacao
+`Concord-Portable-<versao>.zip`.
 
 Publicar uma versao nova (dispara build + release automatico via GitHub
 Actions): veja [docs/ATUALIZACAO.md](docs/ATUALIZACAO.md).
@@ -129,15 +153,18 @@ O CI roda lint, formatacao, build, testes, `npm audit` (bloqueante) e CodeQL.
 
 ## Documentacao
 
+- [download/](download/README.md) - instalar, atualizar, desinstalar,
+  problemas comuns (para quem usa o app)
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - os tres processos, o log
   assinado, arquivo por arquivo do que existe
-- [SECURITY.md](docs/SECURITY.md) - identidade, cifragem, moderacao,
-  seguranca do executavel
-- [ATUALIZACAO.md](docs/ATUALIZACAO.md) - como o auto-update funciona e como
-  publicar uma versao
+- [SECURITY.md](docs/SECURITY.md) - identidade, cifragem, moderacao, ponte
+  web, seguranca do executavel e o que continua em aberto
+- [ATUALIZACAO.md](docs/ATUALIZACAO.md) - como o auto-update funciona, como
+  publicar uma versao e o que o release gera
 - [DEPLOY_WEB.md](docs/DEPLOY_WEB.md) - rodar a ponte WebSocket para acesso
   pelo navegador
-- [WEBRTC.md](docs/WEBRTC.md) - sinalizacao, perfis de latencia, codecs
+- [WEBRTC.md](docs/WEBRTC.md) - sinalizacao, perfis de latencia, codecs e
+  como o transporte e testado sem navegador
 
 ## Limitacoes conhecidas
 

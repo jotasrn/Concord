@@ -37,25 +37,32 @@ O Concord pode ser usado no **browser** além do cliente Electron. Para isso é 
 
 ## Rodar localmente (sem Electron)
 
+Requisito: Node 22+.
+
 ```bash
-# 1. Build dos pacotes
-npm run build --workspace=packages/types
-npm run build --workspace=packages/shared
-npm run build --workspace=packages/core
+npm install
+npm run build                              # compila core, web e a ponte
+npm start --workspace=apps/server          # sobe em http://localhost:3001
+```
 
-# 2. Build do frontend React
-npm run build --workspace=apps/web
+Ou com Docker, igual ao que roda no Railway/Render:
 
-# 3. Instalar deps do servidor
-npm install --workspace=apps/server
-
-# 4. Rodar o servidor
-npm run dev --workspace=apps/server
-# Ou em produção:
-npm run build --workspace=apps/server && npm start --workspace=apps/server
+```bash
+docker build -t concord-web .
+docker run -p 3001:3001 -v concord-data:/data concord-web
 ```
 
 Acesse: `http://localhost:3001`
+
+## Atualizando uma ponte que ja estava no ar
+
+Versoes anteriores criavam uma pasta por **conexao** (nome UUID direto em
+`DATA_DIR`), entao a conta se perdia a cada recarga de pagina. Agora a pasta e
+por **dispositivo**, em `DATA_DIR/devices/`. Na primeira inicializacao a ponte
+apaga as pastas antigas que nunca chegaram a ter conta e mantem as que tem; o
+log mostra quantas de cada. Quem tinha conta numa pasta antiga entra pela
+opcao "Ja tenho uma conta - restaurar com a frase" e os peers reenviam o
+historico.
 
 ---
 

@@ -61,6 +61,46 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Links que nunca mudam: .../releases/latest/download/Concord-Setup.exe
+      # sempre aponta para a versao mais nova. O README e a pasta download/
+      # usam esses links, entao ninguem precisa procurar o arquivo certo
+      # na lista do release. Os arquivos com versao no nome continuam la:
+      # sao eles que o latest.yml do auto-update referencia.
+      - name: Links fixos de download e notas do release
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: apps/desktop/release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSAO="${TAG#v}"
+          cp "Concord-Setup-${VERSAO}.exe" Concord-Setup.exe
+          cp "Concord-Portable-${VERSAO}.zip" Concord-Portable.zip
+          sha256sum Concord-Setup.exe Concord-Portable.zip \
+            "Concord-Setup-${VERSAO}.exe" "Concord-Portable-${VERSAO}.zip" > SHA256SUMS.txt
+          gh release upload "$TAG" Concord-Setup.exe Concord-Portable.zip SHA256SUMS.txt \
+            --clobber --repo "$GITHUB_REPOSITORY"
+
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          {
+            echo "## Baixar"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| **[Instalador (recomendado)](${BASE}/Concord-Setup.exe)** | Instala, cria atalho e se atualiza sozinho |"
+            echo "| [Portatil (.zip)](${BASE}/Concord-Portable.zip) | Descompacte e rode \`Concord.exe\`, sem instalar |"
+            echo
+            echo "Windows 10/11, 64 bits. Na primeira vez o SmartScreen avisa porque o instalador nao tem assinatura digital: **Mais informacoes > Executar assim mesmo**. Passo a passo em [download/](https://github.com/${GITHUB_REPOSITORY}/tree/master/download)."
+            echo
+            echo "Quem ja tem o Concord instalado nao precisa baixar nada: o app atualiza sozinho."
+            echo
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="$TAG" --jq .body
+          } > notas.md
+          gh release edit "$TAG" --notes-file notas.md --repo "$GITHUB_REPOSITORY"
+
       - name: Empacotar sem publicar
         if: "!startsWith(github.ref, 'refs/tags/v')"
         working-directory: apps/desktop

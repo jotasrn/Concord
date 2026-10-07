@@ -30,6 +30,7 @@ Depois de instalado o app se atualiza sozinho.
 
 [![CI](https://github.com/jotasrn/Concord/actions/workflows/ci.yml/badge.svg)](https://github.com/jotasrn/Concord/actions/workflows/ci.yml)
 ![Versao](https://img.shields.io/github/v/release/jotasrn/Concord?label=versao&color=8B5CF6)
+[![Wiki](https://img.shields.io/badge/Documenta%C3%A7%C3%A3o-Wiki%20Oficial-10B981?style=flat&logo=bookstack&logoColor=white)](https://github.com/jotasrn/Concord/wiki)
 
 ## O que ja funciona
 
@@ -151,8 +152,11 @@ npm test
 
 O CI roda lint, formatacao, build, testes, `npm audit` (bloqueante) e CodeQL.
 
-## Documentacao
+## Documentacao & Wiki
 
+Acesse a **[Wiki Oficial do Concord](https://github.com/jotasrn/Concord/wiki)** no GitHub para ver a documentacao completa e ilustrada com 9 modulos.
+
+- [Wiki Oficial](https://github.com/jotasrn/Concord/wiki) - Guia completo com 9 modulos ilustrados
 - [download/](download/README.md) - instalar, atualizar, desinstalar,
   problemas comuns (para quem usa o app)
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - os tres processos, o log

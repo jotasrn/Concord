@@ -17,11 +17,25 @@ module.exports = async function afterPack(context) {
   // esta rodando o build: no Linux o binario e `concord`, no Windows
   // `Concord.exe`. Usar process.platform quebrava qualquer build cruzado.
   const plataforma = context.electronPlatformName;
+  const baseName =
+    context.packager.appInfo?.productFilename ||
+    context.packager.executableName ||
+    'Concord';
   const nome =
     plataforma === 'darwin'
-      ? join(`${context.packager.appInfo.productFilename}.app`)
-      : `${context.packager.executableName}${plataforma === 'win32' ? '.exe' : ''}`;
-  const executavel = join(context.appOutDir, nome);
+      ? join(`${baseName}.app`)
+      : `${baseName}${plataforma === 'win32' ? '.exe' : ''}`;
+  let executavel = join(context.appOutDir, nome);
+
+  // Fallback de seguranca caso o executavel com esse nome exato nao seja encontrado
+  const fs = require('node:fs');
+  if (!fs.existsSync(executavel) && plataforma === 'win32') {
+    const files = fs.readdirSync(context.appOutDir);
+    const exe = files.find((f) => f.endsWith('.exe') && !f.toLowerCase().includes('uninstall'));
+    if (exe) {
+      executavel = join(context.appOutDir, exe);
+    }
+  }
 
   await flipFuses(executavel, {
     version: FuseVersion.V1,

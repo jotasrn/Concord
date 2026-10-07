@@ -14,7 +14,15 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
-import { Avatar, Button, CORES_STATUS, ErrorBanner, InfoBanner, Input, ROTULOS_STATUS } from '../components/ui';
+import {
+  Avatar,
+  Button,
+  CORES_STATUS,
+  ErrorBanner,
+  InfoBanner,
+  Input,
+  ROTULOS_STATUS,
+} from '../components/ui';
 import { MessageText } from '../components/MessageText';
 import { PromptModal, PromptRequest } from '../components/PromptModal';
 import { CallPanel } from '../features/voice/CallPanel';
@@ -695,7 +703,9 @@ export function AppPage({ profile }: { profile: Profile }) {
                 {messages.map((m) => {
                   const autor = autorDaMensagem(m.authorKey, m.authorName);
                   const parentMsg = m.replyToId ? messages.find((x) => x.id === m.replyToId) : null;
-                  const parentAutor = parentMsg ? autorDaMensagem(parentMsg.authorKey, parentMsg.authorName) : null;
+                  const parentAutor = parentMsg
+                    ? autorDaMensagem(parentMsg.authorKey, parentMsg.authorName)
+                    : null;
                   return (
                     <article
                       key={m.id}

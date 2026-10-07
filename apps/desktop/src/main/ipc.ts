@@ -196,7 +196,9 @@ export function registerIpc(
         const trimmed = sanitizeContent(content).trim();
         if (!trimmed) throw new Error('Mensagem vazia');
         if (trimmed.length > 4000) throw new Error('Mensagem muito longa');
-        return session.publish(sid, () => session.requireStore().sendMessage(sid, cid, trimmed, rid));
+        return session.publish(sid, () =>
+          session.requireStore().sendMessage(sid, cid, trimmed, rid),
+        );
       }),
   );
 

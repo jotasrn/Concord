@@ -252,7 +252,7 @@ export function CallStage({
       name: selfName,
       avatar: selfAvatar,
       isSelf: true,
-      stream: state.screenSharing ? state.localScreen : (state.cameraOn ? state.localCamera : null),
+      stream: state.screenSharing ? state.localScreen : state.cameraOn ? state.localCamera : null,
       speaking: Boolean(state.audio?.transmitting) && !state.muted,
       muted: state.muted,
       localMuted: false,

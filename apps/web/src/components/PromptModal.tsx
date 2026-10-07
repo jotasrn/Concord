@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button } from './ui';
+import { Check, Copy } from 'lucide-react';
+import { Button, Modal } from './ui';
 
 export interface PromptField {
   name: string;
@@ -25,18 +26,11 @@ export interface PromptRequest {
 export function PromptModal({ request, onClose }: { request: PromptRequest; onClose: () => void }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [copiado, setCopiado] = useState<string | null>(null);
 
   useEffect(() => {
     setValues(Object.fromEntries(request.fields.map((f) => [f.name, f.defaultValue ?? ''])));
   }, [request]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
 
   const primeiro = request.fields[0];
   const podeEnviar = primeiro ? Boolean(values[primeiro.name]?.trim()) : true;
@@ -53,29 +47,60 @@ export function PromptModal({ request, onClose }: { request: PromptRequest; onCl
   }
 
   return (
-    <div
-      className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 p-6"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    <Modal
+      title={request.title}
+      description={request.description}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={!podeEnviar || busy}>
+            {busy ? 'Aguarde...' : (request.confirmLabel ?? 'Confirmar')}
+          </Button>
+        </>
+      }
     >
-      <div className="panel w-full max-w-sm space-y-4 p-5">
-        <div className="space-y-1">
-          <h3 className="text-base font-bold text-ink-100">{request.title}</h3>
-          {request.description && <p className="text-xs text-ink-400">{request.description}</p>}
-        </div>
-
+      <div className="space-y-4">
         {request.fields.map((field, index) => (
-          <div key={field.name} className="space-y-1">
-            <label className="text-xs uppercase tracking-wide text-ink-400">{field.label}</label>
+          <div key={field.name} className="space-y-2">
+            <label htmlFor={`prompt-${field.name}`} className="label-caps">
+              {field.label}
+            </label>
             {field.multiline ? (
-              <textarea
-                className="field h-20 resize-none font-mono text-xs"
-                autoFocus={index === 0}
-                placeholder={field.placeholder}
-                value={values[field.name] ?? ''}
-                onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.value }))}
-              />
+              <div className="relative">
+                <textarea
+                  id={`prompt-${field.name}`}
+                  className="field h-24 resize-none pr-10 font-mono text-xs"
+                  autoFocus={index === 0}
+                  placeholder={field.placeholder}
+                  value={values[field.name] ?? ''}
+                  onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.value }))}
+                />
+                {field.defaultValue && (
+                  <button
+                    type="button"
+                    title="Copiar"
+                    aria-label="Copiar"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(values[field.name] ?? '');
+                      setCopiado(field.name);
+                      setTimeout(() => setCopiado(null), 1500);
+                    }}
+                    className="absolute right-2 top-2 rounded-md bg-void-700 p-1.5 text-ink-300 transition hover:bg-violet-600 hover:text-white"
+                  >
+                    {copiado === field.name ? (
+                      <Check className="h-3.5 w-3.5" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                )}
+              </div>
             ) : (
               <input
+                id={`prompt-${field.name}`}
                 className="field"
                 autoFocus={index === 0}
                 placeholder={field.placeholder}
@@ -86,16 +111,7 @@ export function PromptModal({ request, onClose }: { request: PromptRequest; onCl
             )}
           </div>
         ))}
-
-        <div className="flex justify-end gap-2 pt-1">
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button onClick={submit} disabled={!podeEnviar || busy}>
-            {busy ? 'Aguarde...' : (request.confirmLabel ?? 'Confirmar')}
-          </Button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import {
+  Camera,
+  CameraOff,
   Headphones,
   HeadphoneOff,
   Mic,
@@ -45,6 +47,7 @@ export function CallPanel({
   onStopScreenShare,
   onTogglePause,
   onSwitchSource,
+  onToggleCamera,
 }: {
   state: CallState;
   selfName: string;
@@ -64,6 +67,7 @@ export function CallPanel({
   onStopScreenShare: () => void;
   onTogglePause: () => void;
   onSwitchSource: () => void;
+  onToggleCamera: () => void;
 }) {
   // Hooks antes de qualquer return condicional, senao a contagem de hooks
   // muda quando a chamada termina.
@@ -113,6 +117,11 @@ export function CallPanel({
           {state.screenSharing && (
             <span title="Compartilhando tela">
               <Monitor className="h-3 w-3 text-violet-400" />
+            </span>
+          )}
+          {state.cameraOn && (
+            <span title="Camera ligada">
+              <Camera className="h-3 w-3 text-violet-400" />
             </span>
           )}
           {state.muted && <MicOff className="h-3 w-3 text-status-dnd" />}
@@ -220,6 +229,21 @@ export function CallPanel({
             <HeadphoneOff className="mx-auto h-4 w-4" />
           ) : (
             <Headphones className="mx-auto h-4 w-4" />
+          )}
+        </button>
+        <button
+          onClick={onToggleCamera}
+          title={state.cameraOn ? 'Desligar camera' : 'Ligar camera'}
+          className={`flex-1 rounded p-1.5 transition ${
+            state.cameraOn
+              ? 'bg-violet-600/30 text-violet-300 hover:bg-violet-600/50'
+              : 'text-ink-300 hover:bg-void-700 hover:text-violet-400'
+          }`}
+        >
+          {state.cameraOn ? (
+            <CameraOff className="mx-auto h-4 w-4" />
+          ) : (
+            <Camera className="mx-auto h-4 w-4" />
           )}
         </button>
         <button

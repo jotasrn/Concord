@@ -394,14 +394,20 @@ async function dispatch(ctx: Contexto, channel: string, args: unknown[]): Promis
       return session.requireStore().listMessages(channelId, limit ?? 50);
     }
     case 'messages:send': {
-      const [serverId, channelId, content] = args as [string, string, string];
+      const [serverId, channelId, content, replyToId] = args as [
+        string,
+        string,
+        string,
+        (string | null | undefined)?,
+      ];
       const sid = assertId(serverId, 'serverId');
       const cid = assertId(channelId, 'channelId');
+      const rid = replyToId ? assertId(replyToId, 'replyToId') : null;
       checkRateLimit(ctx.messageBuckets, cid);
       const trimmed = sanitizeContent(content).trim();
       if (!trimmed) throw new Error('Mensagem vazia');
       if (trimmed.length > 4000) throw new Error('Mensagem muito longa');
-      return session.publish(sid, () => session.requireStore().sendMessage(sid, cid, trimmed));
+      return session.publish(sid, () => session.requireStore().sendMessage(sid, cid, trimmed, rid));
     }
     case 'messages:delete': {
       const [serverId, messageId] = args as [string, string];

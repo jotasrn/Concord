@@ -33,6 +33,10 @@ export interface CallState {
   screenStats: ScreenStats | null;
   /** Stream da propria tela, para o preview de quem transmite. */
   localScreen: MediaStream | null;
+  /** Transmissao de camera/webcam propria. */
+  cameraOn: boolean;
+  /** Stream da propria camera, para o preview local. */
+  localCamera: MediaStream | null;
   latencyProfile: LatencyProfile['id'];
   graphLatencyMs: number | null;
   /** Momento em que a chamada comecou, para contar o tempo em call. */
@@ -53,6 +57,8 @@ const ESTADO_INICIAL: CallState = {
   capture: null,
   screenStats: null,
   localScreen: null,
+  cameraOn: false,
+  localCamera: null,
   latencyProfile: 'ultra',
   graphLatencyMs: null,
   joinedAt: null,
@@ -100,6 +106,7 @@ export function useVoiceCall(
   /** Participante fixado no palco. Um so por vez, como no Discord. */
   const [pinned, setPinned] = useState<string | null>(null);
   const screenRef = useRef(new ScreenShareEngine());
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const serverIdRef = useRef(serverId);
   serverIdRef.current = serverId;
   const mutedRef = useRef(mutedKeys);
@@ -179,7 +186,9 @@ export function useVoiceCall(
   }, []);
 
   const leave = useCallback(async () => {
-    // Para o screen share antes de sair.
+    // Para a camera e o screen share antes de sair.
+    cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+    cameraStreamRef.current = null;
     await screenRef.current.stop();
     await transportRef.current?.disconnect();
     await engineRef.current?.stop();
@@ -429,11 +438,20 @@ export function useVoiceCall(
 
       try {
         const track = await screenRef.current.start(source, quality);
-        await transport.addVideoTrack(track, {
-          maxBitrate: quality.maxBitrate,
-          maxFramerate: quality.frameRate,
-          degradationPreference: quality.degradation,
-        });
+        if (stateRef.current.cameraOn) {
+          await transport.replaceVideoTrack(track);
+          await transport.setVideoEncoding({
+            maxBitrate: quality.maxBitrate,
+            maxFramerate: quality.frameRate,
+            degradationPreference: quality.degradation,
+          });
+        } else {
+          await transport.addVideoTrack(track, {
+            maxBitrate: quality.maxBitrate,
+            maxFramerate: quality.frameRate,
+            degradationPreference: quality.degradation,
+          });
+        }
 
         const audio = screenRef.current.getAudioTrack();
         if (audio) await transport.addSystemAudioTrack(audio);
@@ -469,9 +487,21 @@ export function useVoiceCall(
 
   const stopScreenShare = useCallback(async () => {
     if (!screenRef.current.isActive()) return;
-    await transportRef.current?.removeVideoTrack();
     await transportRef.current?.removeSystemAudioTrack();
     await screenRef.current.stop();
+
+    const camTrack = cameraStreamRef.current?.getVideoTracks()[0];
+    if (stateRef.current.cameraOn && camTrack && camTrack.readyState === 'live') {
+      await transportRef.current?.replaceVideoTrack(camTrack);
+      await transportRef.current?.setVideoEncoding({
+        maxBitrate: 2_500_000,
+        maxFramerate: 30,
+        degradationPreference: 'maintain-framerate',
+      });
+    } else {
+      await transportRef.current?.removeVideoTrack();
+    }
+
     sounds.play('screenStop');
     setState((s) => ({
       ...s,
@@ -481,6 +511,69 @@ export function useVoiceCall(
       screenStats: null,
       localScreen: null,
     }));
+  }, []);
+
+  /** Alterna a camera ligada/desligada na chamada. */
+  const toggleCamera = useCallback(async () => {
+    const transport = transportRef.current;
+    if (!transport) return;
+
+    if (stateRef.current.cameraOn) {
+      cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+      cameraStreamRef.current = null;
+      if (!stateRef.current.screenSharing) {
+        await transport.removeVideoTrack();
+      }
+      sounds.play('mute');
+      setState((s) => ({ ...s, cameraOn: false, localCamera: null }));
+    } else {
+      try {
+        const settings = await window.concord.settings.get().catch(() => null);
+        const videoConf = settings?.settings.video;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            ...(videoConf?.cameraDeviceId ? { deviceId: { exact: videoConf.cameraDeviceId } } : {}),
+            height: { ideal: videoConf?.cameraHeight ?? 720 },
+            frameRate: { ideal: videoConf?.cameraFrameRate ?? 30 },
+          },
+          audio: false,
+        });
+
+        cameraStreamRef.current = stream;
+        const track = stream.getVideoTracks()[0];
+        if (!track) throw new Error('Faixa de camera indisponivel');
+
+        if (!stateRef.current.screenSharing) {
+          await transport.addVideoTrack(track, {
+            maxBitrate: 2_500_000,
+            maxFramerate: videoConf?.cameraFrameRate ?? 30,
+            degradationPreference: 'maintain-framerate',
+          });
+        }
+
+        track.addEventListener('ended', () => {
+          if (cameraStreamRef.current === stream) {
+            cameraStreamRef.current = null;
+            if (!stateRef.current.screenSharing) {
+              void transportRef.current?.removeVideoTrack();
+            }
+            setState((s) => ({ ...s, cameraOn: false, localCamera: null }));
+          }
+        });
+
+        sounds.play('unmute');
+        setState((s) => ({ ...s, cameraOn: true, localCamera: stream }));
+      } catch (error) {
+        sounds.play('error');
+        setState((s) => ({
+          ...s,
+          error:
+            error instanceof Error
+              ? `Nao foi possivel ligar a camera: ${error.message}`
+              : 'Nao foi possivel ligar a camera',
+        }));
+      }
+    }
   }, []);
 
   /** Congela a imagem sem derrubar a conexao. */
@@ -556,6 +649,8 @@ export function useVoiceCall(
     const mixer = mixerRef.current;
     const screen = screenRef.current;
     return () => {
+      cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+      cameraStreamRef.current = null;
       void transportRef.current?.disconnect();
       void engineRef.current?.stop();
       void screen.stop();
@@ -576,6 +671,7 @@ export function useVoiceCall(
     toggleScreenPause,
     switchScreenSource,
     applyScreenQuality,
+    toggleCamera,
     remoteScreens,
     peersPausados,
     peerVolumes,

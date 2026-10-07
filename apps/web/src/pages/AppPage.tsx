@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  CornerDownRight,
   Hash,
   LogIn,
   MicOff,
   Plus,
   Radio,
+  Reply,
   Send,
   Settings,
   Share2,
   UserPlus,
   Volume2,
+  X,
 } from 'lucide-react';
-import { Avatar, Button, ErrorBanner, InfoBanner, Input } from '../components/ui';
+import { Avatar, Button, CORES_STATUS, ErrorBanner, InfoBanner, Input, ROTULOS_STATUS } from '../components/ui';
 import { MessageText } from '../components/MessageText';
 import { PromptModal, PromptRequest } from '../components/PromptModal';
 import { CallPanel } from '../features/voice/CallPanel';
@@ -32,6 +35,7 @@ import { useServerData } from '../hooks/useServerData';
 import { sounds } from '../features/voice/audio/SoundEffects';
 import type {
   Friend,
+  MessageView,
   PeerPresence,
   PendingInvite,
   PresenceStatus,
@@ -42,6 +46,7 @@ import type {
 
 export function AppPage({ profile }: { profile: Profile }) {
   const [draft, setDraft] = useState('');
+  const [replyingTo, setReplyingTo] = useState<MessageView | null>(null);
   const [peers, setPeers] = useState(0);
   const [networkError, setNetworkError] = useState(false);
   const networkFailsRef = useRef(0);
@@ -416,9 +421,11 @@ export function AppPage({ profile }: { profile: Profile }) {
   async function send() {
     if (!activeServer || !activeChannel || !draft.trim()) return;
     const content = draft;
+    const replyId = replyingTo?.id ?? null;
     setDraft('');
+    setReplyingTo(null);
     try {
-      await window.concord.messages.send(activeServer, activeChannel, content);
+      await window.concord.messages.send(activeServer, activeChannel, content, replyId);
       sounds.play('messageSent');
       await loadMessages(activeChannel);
       // Mensagem propria: sempre rola para o fim independente da posicao.
@@ -561,6 +568,7 @@ export function AppPage({ profile }: { profile: Profile }) {
             onStopScreenShare={() => void call.stopScreenShare()}
             onTogglePause={() => void call.toggleScreenPause()}
             onSwitchSource={() => setPicker('trocar')}
+            onToggleCamera={() => void call.toggleCamera()}
           />
 
           <footer className="flex items-center gap-2 border-t border-void-800 bg-void-850 p-2">
@@ -580,7 +588,12 @@ export function AppPage({ profile }: { profile: Profile }) {
                     setStatus(novo);
                     void window.concord.presence.set(novo).catch(report);
                   }}
-                />
+                >
+                  <span className="flex items-center gap-1 text-[10px] text-ink-400 hover:text-ink-200">
+                    <span className={`h-2 w-2 rounded-full ${CORES_STATUS[status]}`} />
+                    {ROTULOS_STATUS[status]}
+                  </span>
+                </StatusPicker>
                 <span
                   className="flex items-center gap-1 text-[10px] text-ink-400"
                   title={networkError ? 'Sem conexao com a rede' : 'Peers conectados'}
@@ -644,6 +657,7 @@ export function AppPage({ profile }: { profile: Profile }) {
               onStopScreenShare={() => void call.stopScreenShare()}
               onTogglePause={() => void call.toggleScreenPause()}
               onSwitchSource={() => setPicker('trocar')}
+              onToggleCamera={() => void call.toggleCamera()}
               onReconnect={() => void call.reconnect()}
             />
           ) : (
@@ -680,22 +694,63 @@ export function AppPage({ profile }: { profile: Profile }) {
                 )}
                 {messages.map((m) => {
                   const autor = autorDaMensagem(m.authorKey, m.authorName);
+                  const parentMsg = m.replyToId ? messages.find((x) => x.id === m.replyToId) : null;
+                  const parentAutor = parentMsg ? autorDaMensagem(parentMsg.authorKey, parentMsg.authorName) : null;
                   return (
-                    <article key={m.id} className="flex gap-3">
-                      <Avatar name={autor.nome} userKey={m.authorKey} src={autor.avatar} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-sm font-semibold text-violet-300">
-                            {autor.nome}
+                    <article
+                      key={m.id}
+                      id={`msg-${m.id}`}
+                      className="group relative flex flex-col rounded-lg px-2 py-1 transition hover:bg-void-900/60"
+                    >
+                      {/* Cabecalho de resposta se houver replyToId */}
+                      {m.replyToId && (
+                        <div
+                          onClick={() => {
+                            if (parentMsg) {
+                              const el = document.getElementById(`msg-${parentMsg.id}`);
+                              el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                          }}
+                          className="mb-1 ml-9 flex cursor-pointer items-center gap-1.5 text-xs text-ink-400 hover:text-ink-200"
+                        >
+                          <CornerDownRight className="h-3 w-3 shrink-0 text-violet-400" />
+                          <span className="font-semibold text-violet-300">
+                            @{parentAutor?.nome ?? 'mensagem anterior'}
                           </span>
-                          <time className="text-[10px] text-ink-400">
-                            {new Date(m.createdAt).toLocaleString('pt-BR')}
-                          </time>
-                          {m.editedAt && (
-                            <span className="text-[10px] text-ink-400">(editada)</span>
-                          )}
+                          <span className="max-w-md truncate text-[11px] text-ink-400">
+                            {parentMsg ? parentMsg.content : 'Mensagem original nao encontrada'}
+                          </span>
                         </div>
-                        <MessageText content={m.content} />
+                      )}
+
+                      <div className="flex gap-3">
+                        <Avatar name={autor.nome} userKey={m.authorKey} src={autor.avatar} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-sm font-semibold text-violet-300">
+                              {autor.nome}
+                            </span>
+                            <time className="text-[10px] text-ink-400">
+                              {new Date(m.createdAt).toLocaleString('pt-BR')}
+                            </time>
+                            {m.editedAt && (
+                              <span className="text-[10px] text-ink-400">(editada)</span>
+                            )}
+                          </div>
+                          <MessageText content={m.content} />
+                        </div>
+                      </div>
+
+                      {/* Botao de acao rapida no hover: responder */}
+                      <div className="absolute right-2 top-1 hidden items-center gap-1 rounded-md border border-void-700 bg-void-850 px-1 py-0.5 shadow-sm group-hover:flex">
+                        <button
+                          onClick={() => setReplyingTo(m)}
+                          title="Responder"
+                          aria-label="Responder a esta mensagem"
+                          className="rounded p-1 text-ink-400 transition hover:bg-void-700 hover:text-violet-300"
+                        >
+                          <Reply className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </article>
                   );
@@ -703,21 +758,53 @@ export function AppPage({ profile }: { profile: Profile }) {
               </div>
 
               {currentChannel && (
-                <div className="flex gap-2 border-t border-void-800 p-3">
-                  <Input
-                    value={draft}
-                    onChange={setDraft}
-                    placeholder={`Mensagem em #${currentChannel.name}`}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        void send();
-                      }
-                    }}
-                  />
-                  <Button onClick={send} disabled={!draft.trim()}>
-                    <Send className="h-4 w-4" />
-                  </Button>
+                <div className="border-t border-void-800">
+                  {/* Faixa de resposta acima do input */}
+                  {replyingTo && (
+                    <div className="flex items-center justify-between bg-void-900/90 px-4 py-1.5 text-xs text-ink-300">
+                      <div className="flex items-center gap-2 truncate">
+                        <Reply className="h-3.5 w-3.5 shrink-0 text-violet-400" />
+                        <span>
+                          Respondendo a{' '}
+                          <strong className="text-violet-300">
+                            @{autorDaMensagem(replyingTo.authorKey, replyingTo.authorName).nome}
+                          </strong>
+                          :
+                        </span>
+                        <span className="max-w-sm truncate italic text-ink-400">
+                          &ldquo;{replyingTo.content}&rdquo;
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setReplyingTo(null)}
+                        title="Cancelar resposta (Esc)"
+                        aria-label="Cancelar resposta"
+                        className="rounded p-1 text-ink-400 hover:bg-void-800 hover:text-ink-100"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 p-3">
+                    <Input
+                      value={draft}
+                      onChange={setDraft}
+                      placeholder={`Mensagem em #${currentChannel.name}`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape' && replyingTo) {
+                          e.preventDefault();
+                          setReplyingTo(null);
+                        } else if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          void send();
+                        }
+                      }}
+                    />
+                    <Button onClick={send} disabled={!draft.trim()}>
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               )}
             </>
@@ -849,12 +936,6 @@ export function AppPage({ profile }: { profile: Profile }) {
               setNomeProprio(nome);
               if (activeServer) void loadServerContent(activeServer);
             }}
-            servers={servers}
-            presencaDe={presencaDe}
-            onFriendsChanged={() => void carregarPendencias()}
-            onCall={(userKey, displayName, avatar) =>
-              void directCall.call(userKey, displayName, avatar)
-            }
           />
         )}
 

@@ -83,18 +83,49 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
       onReady(profile);
     });
 
+  const titulos: Record<Mode, { titulo: string; sub: string }> = {
+    loading: { titulo: 'Concord', sub: 'Carregando...' },
+    unlock: { titulo: 'Boas-vindas de volta!', sub: 'Que bom te ver de novo.' },
+    create: {
+      titulo: 'Criar uma conta',
+      sub: 'Sua conta vive neste dispositivo, nao num servidor.',
+    },
+    phrase: {
+      titulo: 'Sua frase de recuperacao',
+      sub: 'Anote antes de continuar.',
+    },
+    confirm: {
+      titulo: 'Confirme a frase',
+      sub: 'So para garantir que voce anotou.',
+    },
+    restore: {
+      titulo: 'Restaurar conta',
+      sub: 'Use as 12 palavras da sua frase.',
+    },
+  };
+
   return (
-    <main className="flex min-h-full items-center justify-center bg-void-950 p-6">
-      <section className="w-full max-w-md space-y-6">
-        <header className="space-y-1 text-center">
-          <h1 className="text-4xl font-black tracking-tight">
+    <main className="relative flex min-h-full items-center justify-center overflow-hidden bg-void-950 p-6">
+      {/* Fundo: brilhos violeta discretos, na paleta do app. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(60% 50% at 15% 20%, rgba(115,51,232,0.28), transparent 70%), radial-gradient(50% 45% at 85% 85%, rgba(139,92,246,0.22), transparent 70%)',
+        }}
+      />
+      <section className="relative w-full max-w-[480px] animate-pop-in rounded-xl bg-void-800 p-8 shadow-pop">
+        <header className="mb-6 space-y-2 text-center">
+          <p className="text-sm font-black tracking-tight">
             <span className="text-ink-100">Con</span>
             <span className="text-violet-400">cord</span>
-          </h1>
-          <p className="text-sm text-ink-300">Comunicacao P2P. Seus dados ficam com voces.</p>
+          </p>
+          <h1 className="text-2xl font-bold text-ink-100">{titulos[mode].titulo}</h1>
+          <p className="text-sm text-ink-300">{titulos[mode].sub}</p>
         </header>
 
-        <div className="panel space-y-4 p-6">
+        <div className="space-y-4">
           <ErrorBanner message={error} />
 
           {mode === 'loading' && <p className="text-sm text-ink-300">Carregando&hellip;</p>}
@@ -105,6 +136,7 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
                 <KeyRound className="h-4 w-4 text-violet-400" />
                 Desbloquear conta de <strong className="text-ink-100">{displayName}</strong>
               </div>
+              <label className="label-caps block">Senha</label>
               <Input
                 type="password"
                 value={password}
@@ -117,7 +149,7 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
                 {busy ? 'Abrindo...' : 'Entrar'}
               </Button>
               <button
-                className="w-full text-xs text-ink-400 hover:text-violet-400"
+                className="w-full text-left text-sm text-violet-400 hover:underline"
                 onClick={() => {
                   setMode('restore');
                   setError(null);
@@ -130,18 +162,19 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
 
           {mode === 'create' && (
             <>
-              <p className="text-sm text-ink-200">Criar conta neste dispositivo</p>
+              <label className="label-caps block">Nome de exibicao</label>
               <Input
                 value={displayName}
                 onChange={setDisplayName}
-                placeholder="Nome de exibicao"
+                placeholder="Como seus amigos vao te ver"
                 autoFocus
               />
+              <label className="label-caps block">Senha</label>
               <Input
                 type="password"
                 value={password}
                 onChange={setPassword}
-                placeholder="Senha (minimo 8 caracteres)"
+                placeholder="Minimo 8 caracteres"
               />
               <p className="text-xs text-ink-400">
                 A senha protege sua chave neste computador. Ela nao e enviada a lugar nenhum.
@@ -150,7 +183,7 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
                 Continuar
               </Button>
               <button
-                className="w-full text-xs text-ink-400 hover:text-violet-400"
+                className="w-full text-left text-sm text-violet-400 hover:underline"
                 onClick={() => {
                   setMode('restore');
                   setError(null);
@@ -208,7 +241,7 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
                 {busy ? 'Criando conta...' : 'Criar conta'}
               </Button>
               <button
-                className="w-full text-xs text-ink-400 hover:text-violet-400"
+                className="w-full text-left text-sm text-violet-400 hover:underline"
                 onClick={() => setMode('phrase')}
               >
                 Ver a frase de novo
@@ -222,13 +255,16 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
                 <ShieldCheck className="h-4 w-4 text-violet-400" />
                 Restaurar conta com a frase
               </div>
+              <label className="label-caps block">Nome de exibicao</label>
               <Input value={displayName} onChange={setDisplayName} placeholder="Nome de exibicao" />
+              <label className="label-caps block">Frase de recuperacao</label>
               <textarea
                 className="field h-24 resize-none font-mono"
                 value={typedPhrase}
                 placeholder="as 12 palavras da sua frase de recuperacao"
                 onChange={(e) => setTypedPhrase(e.target.value)}
               />
+              <label className="label-caps block">Nova senha</label>
               <Input
                 type="password"
                 value={password}
@@ -265,6 +301,10 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
             </>
           )}
         </div>
+
+        <p className="mt-6 text-center text-xs text-ink-400">
+          Comunicacao P2P. Seus dados ficam com voces.
+        </p>
       </section>
     </main>
   );

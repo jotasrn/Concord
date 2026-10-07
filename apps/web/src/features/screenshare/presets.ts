@@ -5,7 +5,7 @@
  * video de codigo tem exigencias opostas: um precisa de quadros, o outro de
  * nitidez. Um unico preset "alta qualidade" serve mal aos dois.
  */
-export type PresetId = 'gaming' | 'cinema' | 'leitura' | 'economia' | 'custom';
+export type PresetId = 'gaming' | 'cinema' | 'leitura' | 'economia' | 'uhd4k' | 'custom';
 
 export interface ScreenQuality {
   /** Altura maxima da captura em pixels. */
@@ -90,6 +90,19 @@ export const PRESETS: Preset[] = [
       systemAudio: false,
     },
   },
+  {
+    id: 'uhd4k',
+    label: '4K Ultra',
+    description: '2160p 30fps, máxima definição',
+    quality: {
+      height: 2160,
+      frameRate: 30,
+      maxBitrate: 25_000_000,
+      contentHint: 'detail',
+      degradation: 'maintain-resolution',
+      systemAudio: true,
+    },
+  },
 ];
 
 export const DEFAULT_PRESET: PresetId = 'gaming';
@@ -109,6 +122,8 @@ export const BITRATE_STEPS = [
   { label: '5 Mbps', value: 5_000_000 },
   { label: '8 Mbps', value: 8_000_000 },
   { label: '15 Mbps', value: 15_000_000 },
+  { label: '25 Mbps (4K)', value: 25_000_000 },
+  { label: '35 Mbps (4K 60fps)', value: 35_000_000 },
 ];
 
 export const HEIGHT_STEPS = [720, 1080, 1440, 2160];

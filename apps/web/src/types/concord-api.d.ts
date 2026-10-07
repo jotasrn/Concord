@@ -162,7 +162,7 @@ export interface ConcordApi {
   };
   messages: {
     list(channelId: string, limit?: number): Promise<MessageView[]>;
-    send(serverId: string, channelId: string, content: string): Promise<string>;
+    send(serverId: string, channelId: string, content: string, replyToId?: string | null): Promise<string>;
     remove(serverId: string, messageId: string): Promise<boolean>;
   };
   voice: {

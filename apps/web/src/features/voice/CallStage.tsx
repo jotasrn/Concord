@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Camera,
+  CameraOff,
   Clock,
   RefreshCw,
   Gauge,
@@ -215,6 +217,7 @@ export function CallStage({
   onStopScreenShare,
   onTogglePause,
   onSwitchSource,
+  onToggleCamera,
   onReconnect,
 }: {
   state: CallState;
@@ -237,6 +240,7 @@ export function CallStage({
   onStopScreenShare: () => void;
   onTogglePause: () => void;
   onSwitchSource: () => void;
+  onToggleCamera: () => void;
   onReconnect: () => void;
 }) {
   const duracao = useCallDuration(state.joinedAt);
@@ -248,11 +252,11 @@ export function CallStage({
       name: selfName,
       avatar: selfAvatar,
       isSelf: true,
-      stream: state.localScreen,
+      stream: state.screenSharing ? state.localScreen : (state.cameraOn ? state.localCamera : null),
       speaking: Boolean(state.audio?.transmitting) && !state.muted,
       muted: state.muted,
       localMuted: false,
-      sharing: state.screenSharing,
+      sharing: state.screenSharing || state.cameraOn,
       paused: state.screenPaused,
       connection: null,
       latencyMs: null,
@@ -427,6 +431,18 @@ export function CallStage({
           ) : (
             <Headphones className="h-5 w-5" />
           )}
+        </button>
+
+        <button
+          onClick={onToggleCamera}
+          title={state.cameraOn ? 'Desligar camera' : 'Ligar camera'}
+          className={`rounded-full p-3 transition ${
+            state.cameraOn
+              ? 'bg-violet-600 text-white hover:bg-violet-500'
+              : 'bg-void-700 text-ink-200 hover:bg-void-600'
+          }`}
+        >
+          {state.cameraOn ? <CameraOff className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
         </button>
 
         <button

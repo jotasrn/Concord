@@ -31,8 +31,12 @@
 
   --shadow-glow: 0 0 28px -6px rgba(139, 92, 246, 0.55);
   --shadow-glow-soft: 0 0 18px -8px rgba(168, 123, 255, 0.7);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
 
   --animate-pulse-ring: pulseRing 1.4s ease-in-out infinite;
+  --animate-pop-in: popIn 140ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  --animate-fade-in: fadeIn 120ms ease-out;
+  --animate-slide-up: slideUp 160ms ease-out;
 
   @keyframes pulseRing {
     0%,
@@ -43,15 +47,43 @@
       opacity: 1;
     }
   }
+
+  @keyframes popIn {
+    from {
+      opacity: 0;
+      transform: scale(0.94);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 }
 
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still
   looks the same as it did with Tailwind CSS v3.
-
-  If we ever want to remove these styles, we need to add an explicit border
-  color utility to any element that depends on these defaults.
 */
 @layer base {
   *,
@@ -69,30 +101,69 @@
     cursor: pointer;
   }
 
-  /* v4 deriva o placeholder da cor do texto; a v3 usava gray-400. */
   input::placeholder,
   textarea::placeholder {
-    color: var(--color-gray-400);
+    color: var(--color-ink-400);
   }
 }
 
 @utility btn-primary {
-  @apply rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white
-           transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40;
+  @apply inline-flex items-center justify-center gap-2 rounded-md bg-violet-600 px-4 py-2 text-sm
+           font-semibold text-white transition hover:bg-violet-500 active:translate-y-px
+           disabled:cursor-not-allowed disabled:opacity-40;
 }
 
 @utility btn-ghost {
-  @apply rounded-lg px-4 py-2 text-sm font-medium text-ink-200 transition
-           hover:bg-void-700 hover:text-ink-100;
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium
+           text-ink-200 transition hover:bg-void-700 hover:text-ink-100;
+}
+
+@utility btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 rounded-md bg-void-600 px-4 py-2 text-sm
+           font-semibold text-ink-100 transition hover:bg-void-500
+           disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+@utility btn-danger {
+  @apply inline-flex items-center justify-center gap-2 rounded-md bg-status-dnd px-4 py-2 text-sm
+           font-semibold text-white transition hover:brightness-110
+           disabled:cursor-not-allowed disabled:opacity-40;
 }
 
 @utility field {
-  @apply w-full rounded-lg border border-void-600 bg-void-850 px-3 py-2 text-sm
-           text-ink-100 placeholder:text-ink-400 focus:border-violet-500 focus:outline-hidden;
+  @apply w-full rounded-md border border-void-600 bg-void-950 px-3 py-2.5 text-sm
+           text-ink-100 transition placeholder:text-ink-400 hover:border-void-500
+           focus:border-violet-500 focus:outline-hidden;
+}
+
+@utility label-caps {
+  @apply text-[11px] font-bold uppercase tracking-wide text-ink-300;
 }
 
 @utility panel {
   @apply rounded-xl border border-void-700 bg-void-900;
+}
+
+@utility menu {
+  @apply rounded-lg border border-void-600 bg-void-900 p-1.5 shadow-pop;
+}
+
+@utility menu-item {
+  @apply flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-ink-200
+           transition hover:bg-violet-600 hover:text-white disabled:cursor-not-allowed
+           disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-200;
+}
+
+@utility scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-void-600) transparent;
+}
+
+@utility scroll-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 @layer base {
@@ -103,8 +174,8 @@
   }
 
   body {
-    @apply bg-void-950 text-ink-100 antialiased;
-    /* Impede seleção acidental de texto na moldura do app desktop. */
+    @apply bg-void-950 font-sans text-ink-100 antialiased;
+    /* Impede selecao acidental de texto na moldura do app desktop. */
     user-select: none;
   }
 

@@ -209,6 +209,23 @@ test('so o autor edita a propria mensagem', () => {
   store.close();
 });
 
+test('mensagem com reply_to_id guarda referencia ao id original', () => {
+  const joao = novaIdentidade('joao');
+  const store = novoStore(joao);
+  const serverId = store.createServer('Gamer Den');
+  const channelId = store.createChannel(serverId, 'geral');
+
+  const id1 = store.sendMessage(serverId, channelId, 'primeira msg');
+  const id2 = store.sendMessage(serverId, channelId, 'respondendo primeira', id1);
+
+  const msgs = store.listMessages(channelId);
+  const resposta = msgs.find((m) => m.id === id2);
+  assert.ok(resposta);
+  assert.equal(resposta?.replyToId, id1);
+  assert.equal(resposta?.content, 'respondendo primeira');
+  store.close();
+});
+
 test('ninguem se auto-adiciona a um servidor alheio', () => {
   const joao = novaIdentidade('joao');
   const invasor = novaIdentidade('invasor');

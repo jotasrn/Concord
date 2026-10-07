@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { join } from 'node:path';
@@ -54,6 +55,22 @@ app.use((_req: express.Request, res: express.Response, next: express.NextFunctio
   );
   next();
 });
+
+// ---------------------------------------------------------------------------
+// Rate limiting (CWE-770: js/missing-rate-limiting)
+// ---------------------------------------------------------------------------
+if (TRUST_PROXY) {
+  app.set('trust proxy', 1);
+}
+
+const httpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 1000, // limite de 1000 requisicoes por IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, message: 'Muitas requisicoes, tente novamente mais tarde.' },
+});
+app.use(httpLimiter);
 
 // ---------------------------------------------------------------------------
 // Frontend estático (build do apps/web)

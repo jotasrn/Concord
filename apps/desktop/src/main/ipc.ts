@@ -185,16 +185,19 @@ export function registerIpc(
     wrap(() => session.requireStore().listMessages(channelId, limit ?? 50)),
   );
 
-  ipcMain.handle('messages:send', (_e, serverId: string, channelId: string, content: string) =>
-    wrap(() => {
-      const sid = assertId(serverId, 'serverId');
-      const cid = assertId(channelId, 'channelId');
-      checkRateLimit(cid);
-      const trimmed = sanitizeContent(content).trim();
-      if (!trimmed) throw new Error('Mensagem vazia');
-      if (trimmed.length > 4000) throw new Error('Mensagem muito longa');
-      return session.publish(sid, () => session.requireStore().sendMessage(sid, cid, trimmed));
-    }),
+  ipcMain.handle(
+    'messages:send',
+    (_e, serverId: string, channelId: string, content: string, replyToId?: string | null) =>
+      wrap(() => {
+        const sid = assertId(serverId, 'serverId');
+        const cid = assertId(channelId, 'channelId');
+        const rid = replyToId ? assertId(replyToId, 'replyToId') : null;
+        checkRateLimit(cid);
+        const trimmed = sanitizeContent(content).trim();
+        if (!trimmed) throw new Error('Mensagem vazia');
+        if (trimmed.length > 4000) throw new Error('Mensagem muito longa');
+        return session.publish(sid, () => session.requireStore().sendMessage(sid, cid, trimmed, rid));
+      }),
   );
 
   ipcMain.handle('messages:delete', (_e, serverId: string, messageId: string) =>

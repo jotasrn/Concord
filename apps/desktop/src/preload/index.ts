@@ -85,8 +85,8 @@ const api = {
           editedAt: number | null;
         }[]
       >('messages:list', channelId, limit),
-    send: (serverId: string, channelId: string, content: string) =>
-      call<string>('messages:send', serverId, channelId, content),
+    send: (serverId: string, channelId: string, content: string, replyToId?: string | null) =>
+      call<string>('messages:send', serverId, channelId, content, replyToId ?? null),
     remove: (serverId: string, messageId: string) =>
       call<boolean>('messages:delete', serverId, messageId),
   },

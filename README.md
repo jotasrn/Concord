@@ -37,8 +37,11 @@ Depois de instalado o app se atualiza sozinho.
 - **Chat** - links clicaveis, edicao e apagar mensagem propria
 - **Voz** - AEC/NS/AGC, deteccao de fala por limiar relativo ao ruido, perfil
   de latencia ultra-baixa (Opus a 10ms, jitter buffer zerado)
-- **Video e compartilhamento de tela** - codec AV1/VP9 quando disponivel,
+- **Video, webcam e compartilhamento de tela** - transmissao de webcam em chamadas,
+  compartilhamento de tela em ate 4K (Ultra HD), codec AV1/VP9 quando disponivel,
   pausa sem derrubar a chamada, picture-in-picture, tela cheia
+- **Chat e comunicacao** - respostas e citacoes de mensagens (`reply_to`), formatacao rica,
+  historico assinado descentralizado
 - **Chamada direta** - liga para um amigo especifico, sem precisar de um
   servidor em comum
 - **Bolhas flutuantes** - overlay transparente sobre jogos mostrando quem
@@ -54,9 +57,6 @@ Depois de instalado o app se atualiza sozinho.
 - **Seguranca do executavel** - Electron 42 com sandbox, DevTools bloqueado
   em producao, sem sourcemap, fuses do Electron (sem `RUN_AS_NODE`,
   integridade do asar)
-
-Pendente: transmissao de webcam durante a chamada (a captura ja existe nas
-configuracoes; falta ligar ao transporte).
 
 ## Como funciona, em uma frase
 

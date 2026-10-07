@@ -186,7 +186,8 @@ export async function installWebAdapter(): Promise<void> {
     },
     messages: {
       list: (cid: string, limit?: number) => call('messages:list', cid, limit),
-      send: (sid: string, cid: string, content: string) => call('messages:send', sid, cid, content),
+      send: (sid: string, cid: string, content: string, replyToId?: string | null) =>
+        call('messages:send', sid, cid, content, replyToId ?? null),
       remove: (sid: string, mid: string) => call('messages:delete', sid, mid),
     },
     voice: {

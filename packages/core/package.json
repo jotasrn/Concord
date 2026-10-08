@@ -14,7 +14,7 @@
     "@concord/types": "0.1.0",
     "@scure/bip39": "^1.4.0",
     "better-sqlite3": "^12.11.1",
-    "hyperswarm": "^4.8.4"
+    "hyperswarm": "^4.17.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",

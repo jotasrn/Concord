@@ -28,7 +28,7 @@ jobs:
       # ("dist/**/*.test.js") direto para `node --test`, e a expansao de glob
       # pelo proprio runner so existe a partir do Node 22. No Node 20 ele nao
       # encontra arquivo nenhum e falha.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm

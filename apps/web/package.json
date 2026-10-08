@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@concord/types": "0.1.0",
-    "lucide-react": "^0.446.0",
+    "lucide-react": "^1.52.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^4.5.5"

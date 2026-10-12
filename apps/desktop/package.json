@@ -1,6 +1,7 @@
 {
   "name": "@concord/desktop",
   "version": "0.7.2",
+  "license": "MIT",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {

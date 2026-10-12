@@ -172,3 +172,8 @@ Consequencia direta de nao haver servidor:
   simetrico dos dois lados ao mesmo tempo pode falhar em conectar.
 - **Sem assinatura digital do instalador.** O Windows SmartScreen avisa na
   primeira instalacao ate haver um certificado de code signing.
+
+## Licenca
+
+[MIT](LICENSE). Pode usar, copiar, modificar e distribuir, inclusive em projetos
+comerciais, mantendo o aviso de direito autoral.

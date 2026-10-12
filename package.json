@@ -2,6 +2,7 @@
   "name": "concord",
   "private": true,
   "version": "0.7.2",
+  "license": "MIT",
   "description": "Concord - plataforma de comunicacao P2P para gamers (sem servidor)",
   "workspaces": [
     "apps/*",

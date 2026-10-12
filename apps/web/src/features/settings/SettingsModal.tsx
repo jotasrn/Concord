@@ -53,6 +53,28 @@ export function SettingsModal({
 }) {
   const [tab, setTab] = useState<Aba>('perfil');
   const [versao, setVersao] = useState<string | null>(null);
+  const [verificando, setVerificando] = useState(false);
+  const [resultadoUpdate, setResultadoUpdate] = useState<string | null>(null);
+
+  async function verificarAtualizacao() {
+    setVerificando(true);
+    setResultadoUpdate(null);
+    try {
+      const s = await window.concord.update.check();
+      const texto: Record<string, string> = {
+        idle: 'Voce ja esta na versao mais recente.',
+        downloading: `Baixando a versao ${s.version ?? 'nova'}...`,
+        ready: `Versao ${s.version ?? 'nova'} pronta - instala ao fechar o app.`,
+        unsupported: s.message ?? 'Disponivel so no app instalado.',
+        error: s.message ?? 'Nao foi possivel verificar agora.',
+      };
+      setResultadoUpdate(texto[s.state] ?? 'Verificacao concluida.');
+    } catch {
+      setResultadoUpdate('Nao foi possivel verificar agora.');
+    } finally {
+      setVerificando(false);
+    }
+  }
 
   useEffect(() => {
     void window.concord.app
@@ -102,6 +124,17 @@ export function SettingsModal({
             </div>
           ))}
           <div className="mx-2.5 my-2 h-px bg-void-600" />
+          <button
+            onClick={() => void verificarAtualizacao()}
+            disabled={verificando}
+            className="mt-3 w-full rounded-sm px-3 py-2 text-left text-sm text-ink-300 transition hover:bg-void-700 hover:text-violet-300 disabled:opacity-50"
+          >
+            {verificando ? 'Verificando...' : 'Verificar atualizacoes'}
+          </button>
+          {resultadoUpdate && (
+            <p className="px-3 pt-1 text-[11px] leading-snug text-ink-400">{resultadoUpdate}</p>
+          )}
+
           {versao && (
             <p className="px-2.5 pt-1 font-mono text-[11px] text-ink-400" title="Versao instalada">
               Concord v{versao}

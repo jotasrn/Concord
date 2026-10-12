@@ -38,7 +38,9 @@ function trayIcon(): Electron.NativeImage {
     : join(__dirname, '../../../build/icon.png');
   const imagem = nativeImage.createFromPath(caminho);
   // A bandeja do Windows espera algo pequeno; a arte original e grande.
-  return imagem.isEmpty() ? imagem : imagem.resize({ width: 16, height: 16 });
+  // 32px: o Windows reduz para o tamanho certo conforme a escala da tela;
+  // 16px ficava borrado (e parecia um quadrado em branco) em telas com zoom.
+  return imagem.isEmpty() ? imagem : imagem.resize({ width: 32, height: 32, quality: 'best' });
 }
 
 /**
@@ -48,7 +50,10 @@ function trayIcon(): Electron.NativeImage {
  * sincronizacao e as chamadas continuem. Encerrar de verdade fica no menu da
  * bandeja - explicito, para o usuario nao ficar sem saber como sair.
  */
-export function setupTray(getWindow: () => BrowserWindow | null): void {
+export function setupTray(
+  getWindow: () => BrowserWindow | null,
+  onVerificarAtualizacao: () => void = () => undefined,
+): void {
   if (tray) return;
 
   tray = new Tray(trayIcon());
@@ -62,20 +67,27 @@ export function setupTray(getWindow: () => BrowserWindow | null): void {
     window.focus();
   };
 
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Abrir Concord', click: mostrar },
-      { type: 'separator' },
-      {
-        label: 'Encerrar',
-        click: () => {
-          markQuitting();
-          app.quit();
-        },
+  const menu = Menu.buildFromTemplate([
+    { label: 'Abrir Concord', click: mostrar },
+    { label: 'Verificar atualizacoes', click: onVerificarAtualizacao },
+    { type: 'separator' },
+    {
+      label: 'Encerrar',
+      click: () => {
+        markQuitting();
+        app.quit();
       },
-    ]),
-  );
+    },
+  ]);
 
+  /*
+   * O menu e aberto explicitamente no clique direito, em vez de so
+   * setContextMenu. Com o icone na area de icones ocultos do Windows, o
+   * menu associado as vezes nao abria - e sem ele nao havia como encerrar o
+   * app pela bandeja.
+   */
+  tray.on('right-click', () => tray?.popUpContextMenu(menu));
+  tray.on('click', mostrar);
   tray.on('double-click', mostrar);
 }
 

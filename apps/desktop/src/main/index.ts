@@ -3,11 +3,18 @@
 // sem isso, uma falha de import vira uma caixa "Error" generica sem rastro.
 import { fatal, log } from './diagnostics';
 import { join } from 'node:path';
-import { BrowserWindow, app, nativeImage, session as electronSession, shell } from 'electron';
+import {
+  BrowserWindow,
+  Notification,
+  app,
+  nativeImage,
+  session as electronSession,
+  shell,
+} from 'electron';
 import { registerIpc } from './ipc';
 import { destroyTray, isQuitting, markQuitting, setCallActive, setupTray } from './background';
 import { applyCoreLimit, readSettings, settingsPath } from './settings';
-import { initUpdater, noteCallActive, stopUpdater } from './updater';
+import { check as verificarAtualizacao, initUpdater, noteCallActive, stopUpdater } from './updater';
 import type { Session as SessionType } from './session';
 
 const isDev = !app.isPackaged;
@@ -216,7 +223,26 @@ if (!app.requestSingleInstanceLock()) {
         },
       );
       createWindow();
-      setupTray(() => window);
+      setupTray(
+        () => window,
+        () => {
+          // A janela pode estar escondida na bandeja: o resultado vai por
+          // notificacao do sistema, alem de aparecer na faixa de atualizacao.
+          void verificarAtualizacao().then((s) => {
+            const texto: Record<string, string> = {
+              idle: 'Voce ja esta na versao mais recente.',
+              downloading: `Baixando a versao ${s.version ?? 'nova'}...`,
+              ready: `Versao ${s.version ?? 'nova'} pronta. Sera instalada ao fechar o Concord.`,
+              unsupported: s.message ?? 'Atualizacao automatica indisponivel.',
+              error: s.message ?? 'Nao foi possivel verificar agora.',
+            };
+            new Notification({
+              title: 'Concord',
+              body: texto[s.state] ?? 'Verificacao concluida.',
+            }).show();
+          });
+        },
+      );
       initUpdater(() => window);
     } catch (error) {
       fatal(error);

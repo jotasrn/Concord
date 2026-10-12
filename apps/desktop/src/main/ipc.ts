@@ -1,5 +1,6 @@
 import { BrowserWindow, app, ipcMain } from 'electron';
 import { Session } from './session';
+import { resumeAvailable, takeResume } from './resume';
 
 /**
  * Validador de sinal de voz do core, carregado tarde como o resto do core
@@ -91,7 +92,25 @@ export function registerIpc(
       hasAccount: session.hasAccount(),
       unlocked: session.isUnlocked(),
       displayName: session.accountName(),
+      canResume: !session.isUnlocked() && resumeAvailable(userData),
     })),
+  );
+
+  // Retomada rapida: destranca com a senha guardada ao encerrar, se ainda
+  // estiver dentro da janela. Falhou ou venceu: devolve null e a interface
+  // pede a senha normalmente.
+  ipcMain.handle('account:resume', () =>
+    wrap(async () => {
+      if (session.isUnlocked()) return session.profile();
+      const senha = takeResume(userData);
+      if (!senha) return null;
+      try {
+        await session.unlock(senha);
+        return session.profile();
+      } catch {
+        return null;
+      }
+    }),
   );
 
   ipcMain.handle('account:newPhrase', () => wrap(() => session.newRecoveryPhrase()));

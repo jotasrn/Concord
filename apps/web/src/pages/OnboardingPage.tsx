@@ -5,7 +5,14 @@ import type { Profile } from '../types/concord-api';
 
 type Mode = 'loading' | 'unlock' | 'create' | 'phrase' | 'confirm' | 'restore';
 
-export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => void }) {
+export function OnboardingPage({
+  onReady,
+  onBusy,
+}: {
+  onReady: (profile: Profile) => void;
+  /** Avisa quando comeca/termina trabalho pesado, para a splash cobrir a tela. */
+  onBusy: (busy: boolean) => void;
+}) {
   const [mode, setMode] = useState<Mode>('loading');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
@@ -17,14 +24,31 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
   const [precisaConfirmarTroca, setPrecisaConfirmarTroca] = useState(false);
 
   useEffect(() => {
-    void window.concord.account.status().then((s) => {
-      setMode(s.hasAccount ? 'unlock' : 'create');
+    void window.concord.account.status().then(async (s) => {
       if (s.displayName) setDisplayName(s.displayName);
+      // Reabriu logo depois de fechar: destranca sozinho, sem pedir a senha.
+      if (s.hasAccount && s.canResume) {
+        onBusy(true);
+        try {
+          const profile = await window.concord.account.resume();
+          if (profile) {
+            onReady(profile);
+            return;
+          }
+        } catch {
+          // Cai para a tela de senha normal.
+        } finally {
+          onBusy(false);
+        }
+      }
+      setMode(s.hasAccount ? 'unlock' : 'create');
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function run(fn: () => Promise<void>) {
+  async function run(fn: () => Promise<void>, comSplash = false) {
     setBusy(true);
+    if (comSplash) onBusy(true);
     setError(null);
     try {
       await fn();
@@ -32,6 +56,7 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
       setError(e instanceof Error ? e.message : 'Erro inesperado');
     } finally {
       setBusy(false);
+      if (comSplash) onBusy(false);
     }
   }
 
@@ -39,7 +64,7 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
     run(async () => {
       const profile = await window.concord.account.unlock(password);
       onReady(profile);
-    });
+    }, true);
 
   const startCreate = () =>
     run(async () => {
@@ -57,7 +82,7 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
       await window.concord.account.create(displayName, password, phrase);
       const profile = await window.concord.account.unlock(password);
       onReady(profile);
-    });
+    }, true);
 
   const restore = (confirmOverwrite = false) =>
     run(async () => {
@@ -81,7 +106,7 @@ export function OnboardingPage({ onReady }: { onReady: (profile: Profile) => voi
       setPrecisaConfirmarTroca(false);
       const profile = await window.concord.account.unlock(password);
       onReady(profile);
-    });
+    }, true);
 
   const titulos: Record<Mode, { titulo: string; sub: string }> = {
     loading: { titulo: 'Concord', sub: 'Carregando...' },

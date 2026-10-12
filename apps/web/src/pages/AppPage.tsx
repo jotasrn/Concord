@@ -52,7 +52,15 @@ import type {
   ChannelView,
 } from '../types/concord-api';
 
-export function AppPage({ profile }: { profile: Profile }) {
+export function AppPage({ profile, onLoaded }: { profile: Profile; onLoaded: () => void }) {
+  // Avisa a splash que os dados iniciais chegaram. Um pequeno minimo evita o
+  // piscar quando tudo carrega rapido demais para ver a animacao.
+  useEffect(() => {
+    const minimo = new Promise((r) => setTimeout(r, 900));
+    void Promise.all([window.concord.servers.list().catch(() => []), minimo]).then(onLoaded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [draft, setDraft] = useState('');
   const [replyingTo, setReplyingTo] = useState<MessageView | null>(null);
   const [peers, setPeers] = useState(0);

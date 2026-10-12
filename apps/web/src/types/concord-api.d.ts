@@ -122,8 +122,15 @@ export interface Profile {
 
 export interface ConcordApi {
   account: {
-    status(): Promise<{ hasAccount: boolean; unlocked: boolean; displayName: string | null }>;
+    status(): Promise<{
+      hasAccount: boolean;
+      unlocked: boolean;
+      displayName: string | null;
+      canResume: boolean;
+    }>;
     newPhrase(): Promise<string>;
+    /** Destranca com a senha guardada ao encerrar, se ainda dentro da janela curta. */
+    resume(): Promise<Profile | null>;
     create(displayName: string, password: string, phrase: string): Promise<boolean>;
     restore(
       displayName: string,

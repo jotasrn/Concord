@@ -22,6 +22,8 @@ import {
 export class Session {
   private store: ConcordStore | null = null;
   private node: P2PNode | null = null;
+  /** Senha da sessao, so em memoria, para a retomada rapida ao reabrir (resume.ts). */
+  private senhaDaSessao: string | null = null;
 
   constructor(
     private readonly dataDir: string,
@@ -115,6 +117,7 @@ export class Session {
   async unlock(password: string): Promise<Identity> {
     const keystore = JSON.parse(readFileSync(this.keystorePath, 'utf8')) as EncryptedKeystore;
     const identity = decryptKeystore(keystore, password);
+    this.senhaDaSessao = password;
 
     this.store = new ConcordStore(this.dbPath, identity);
 
@@ -439,7 +442,13 @@ export class Session {
     return this.node?.peerCount() ?? 0;
   }
 
+  /** Senha desta sessao, ou null se ainda nao destrancou. */
+  sessionPassword(): string | null {
+    return this.senhaDaSessao;
+  }
+
   async shutdown(): Promise<void> {
+    this.senhaDaSessao = null;
     await this.node?.destroy();
     this.store?.close();
     this.node = null;

@@ -16,10 +16,15 @@ async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
 const api = {
   account: {
     status: () =>
-      call<{ hasAccount: boolean; unlocked: boolean; displayName: string | null }>(
-        'account:status',
-      ),
+      call<{
+        hasAccount: boolean;
+        unlocked: boolean;
+        displayName: string | null;
+        canResume: boolean;
+      }>('account:status'),
     newPhrase: () => call<string>('account:newPhrase'),
+    resume: () =>
+      call<{ displayName: string; publicKey: string; handle: string } | null>('account:resume'),
     create: (displayName: string, password: string, phrase: string) =>
       call<boolean>('account:create', displayName, password, phrase),
     restore: (displayName: string, password: string, phrase: string, confirmOverwrite?: boolean) =>

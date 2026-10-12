@@ -207,3 +207,102 @@
     @apply outline-hidden ring-2 ring-violet-500 ring-offset-2 ring-offset-void-950;
   }
 }
+
+/*
+ * Buraco negro da tela de abertura.
+ *
+ * Tres camadas, de tras para frente: o disco de acrecao (inclinado em 3D e
+ * girando), o halo da lente gravitacional (anel fino de frente, que no mundo
+ * real e a luz do disco curvada por tras do buraco) e o nucleo preto que
+ * esconde o centro. So transform e opacity animam, entao roda na GPU e nao
+ * disputa CPU com o carregamento da conta.
+ */
+.bh-stage {
+  position: relative;
+  width: 360px;
+  height: 360px;
+  perspective: 900px;
+}
+
+.bh-disc {
+  position: absolute;
+  inset: 0;
+  transform: rotateX(68deg);
+  transform-style: preserve-3d;
+}
+
+/* Metade de baixo do disco, desenhada POR CIMA do nucleo: o disco passa na
+   frente do buraco no lado de quem olha e some atras dele no outro lado. */
+.bh-disc-front {
+  clip-path: inset(50% 0 0 0);
+}
+
+.bh-disc::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    #5b21b6 50deg,
+    #c4a6ff 110deg,
+    #8b5cf6 170deg,
+    transparent 230deg,
+    #7333e8 300deg,
+    #a87bff 340deg,
+    transparent 360deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 27%, #000 31%, #000 62%, transparent 74%);
+  mask: radial-gradient(circle, transparent 27%, #000 31%, #000 62%, transparent 74%);
+  filter: blur(1.5px) saturate(1.3);
+  animation: bh-spin 4.5s linear infinite;
+}
+
+.bh-halo {
+  position: absolute;
+  inset: 96px;
+  border-radius: 50%;
+  border: 2px solid rgb(196 166 255 / 0.55);
+  box-shadow:
+    0 0 28px 6px rgb(139 92 246 / 0.55),
+    inset 0 0 24px 4px rgb(139 92 246 / 0.35);
+  animation: bh-pulse 2.6s ease-in-out infinite;
+}
+
+.bh-core {
+  position: absolute;
+  inset: 106px;
+  border-radius: 50%;
+  background: #000;
+  box-shadow:
+    0 0 36px 14px #000,
+    0 0 0 1px rgb(0 0 0);
+}
+
+@keyframes bh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes bh-pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: scale(0.97);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bh-disc::before {
+    animation-duration: 14s;
+  }
+  .bh-halo {
+    animation: none;
+  }
+}

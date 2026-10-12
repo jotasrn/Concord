@@ -14,6 +14,7 @@ import {
 import { registerIpc } from './ipc';
 import { destroyTray, isQuitting, markQuitting, setCallActive, setupTray } from './background';
 import { applyCoreLimit, readSettings, settingsPath } from './settings';
+import { saveResume } from './resume';
 import { check as verificarAtualizacao, initUpdater, noteCallActive, stopUpdater } from './updater';
 import type { Session as SessionType } from './session';
 
@@ -269,6 +270,9 @@ if (!app.requestSingleInstanceLock()) {
     destroyTray();
     const { destroyOverlay } = require('./overlay') as typeof import('./overlay');
     destroyOverlay();
+    // Antes do shutdown, que apaga a senha da memoria.
+    const senha = appSession?.sessionPassword();
+    if (senha) saveResume(app.getPath('userData'), senha);
     void appSession?.shutdown();
   });
 }

@@ -158,7 +158,7 @@ const VOICE_KINDS: ReadonlySet<string> = new Set([
 export const MAX_VOICE_SIGNAL_BYTES = 64 * 1024;
 
 /**
- * Valida um sinal de voz vindo de fora do core (renderer, ponte web). Antes
+ * Valida um sinal de voz vindo de fora do core (renderer). Antes
  * ele atravessava como `any` direto para a rede: um renderer comprometido
  * podia difundir qualquer objeto, de qualquer tamanho, para todos os peers.
  * `from` nao e aceito daqui - o no sempre preenche com a propria chave.

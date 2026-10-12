@@ -30,21 +30,6 @@ dados dos outros. Quem volta de offline puxa dos peers o que perdeu.
 O renderer **nao tem acesso ao Node**. Tudo que toca disco, rede ou sistema
 passa pelo IPC, que valida a entrada no processo principal.
 
-### Modo navegador (opcional)
-
-A mesma interface roda num navegador comum. No lugar do IPC, ela fala por
-WebSocket com a ponte `apps/server`, que roda o mesmo `packages/core` num
-servidor. O codigo React nao sabe em qual dos dois modos esta: `lib/webAdapter.ts`
-instala um `window.concord` com a mesma forma que o preload do Electron expoe.
-
-```
-navegador (apps/web) ──WebSocket──▶ apps/server ──usa──▶ packages/core ──▶ rede P2P
-```
-
-Cada navegador se identifica com um token aleatorio guardado no proprio
-navegador; a ponte mantem uma pasta e no maximo uma sessao por token. Detalhes
-em [DEPLOY_WEB.md](DEPLOY_WEB.md) e na secao da ponte em [SECURITY.md](SECURITY.md).
-
 ## Regra central: operacao vs. efemero
 
 Duas categorias de dado, com destinos opostos:
@@ -62,7 +47,7 @@ e reconstruida.
 ## `packages/core/` — o nucleo
 
 O coracao do app. Nao depende de Electron nem de React; roda no processo
-principal do Electron e na ponte web.
+principal do Electron.
 
 ### `identity/`
 | Arquivo | Para que |
@@ -153,29 +138,11 @@ partir do `icone.png` da raiz.
 
 ---
 
-## `apps/server/` — a ponte web (opcional)
-
-| Arquivo | Para que |
-|---|---|
-| `index.ts` | Express + WebSocket: serve o build do `apps/web`, cabecalhos de seguranca, verificacao de Origin no handshake, `maxPayload`, faxina periodica e desligamento limpo |
-| `wsHandler.ts` | Uma conexao = um dispositivo. Exige `session:hello` com o token antes de qualquer canal; espelha os canais do IPC do Electron |
-| `session.ts` | O mesmo papel do `session.ts` do desktop, sem Electron |
-| `devices.ts` | Pasta por dispositivo (`devices/<sha256 do token>`) e faxina das pastas sem conta |
-| `limits.ts` | Sessoes por IP e no total, chamadas por segundo, trava apos senhas erradas, checagem de Origin |
-| `*.test.ts` | Unidade e integracao com WebSocket de verdade (F5 mantem a conta, segunda aba, mensagem gigante, Origin, forca bruta) |
-
----
-
 ## `apps/web/` — a interface
 
 ### `pages/`
 `OnboardingPage.tsx` (criar conta, frase, desbloquear, restaurar) e
 `AppPage.tsx` (a tela principal: servidores, canais, chat, membros).
-
-### `lib/`
-| Arquivo | Para que |
-|---|---|
-| `webAdapter.ts` | `window.concord` sobre WebSocket para o modo navegador, com token de dispositivo e reconexao |
 
 ### `features/voice/`
 | Arquivo | Para que |
@@ -230,7 +197,7 @@ Contratos TypeScript compartilhados pelo core e a configuracao base do
 
 | | |
 |---|---|
-| Testes | `node --test` no core e na ponte, Vitest na interface. 151 no total |
+| Testes | `node --test` no core, Vitest na interface |
 | Lint | ESLint (typescript-eslint + react-hooks), `eslint.config.mjs` |
 | Formatacao | Prettier (`.prettierrc.json`), conferido no CI |
 | CI | `.github/workflows/ci.yml`: lint, formatacao, build, testes, `npm audit` bloqueante e CodeQL em todo push e PR |

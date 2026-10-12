@@ -35,12 +35,6 @@
   - Respostas Encadeadas (Replies)
   - Cargos, Moderação e Bitmask
 
-- **[[6. Deploy da Ponte Web|6.-Deploy-do-Servidor-Web]]**
-  - Como Funciona a Ponte (`apps/server`)
-  - Deploy em Docker, Railway e Render
-  - Proxy Reverso, TLS e Rate Limiting
-  - Variáveis de Ambiente
-
 - **[[7. Segurança e Modelo de Ameaças|7.-Seguranca-e-Permissoes]]**
   - Modelo de Ameaça Descentralizado
   - Validação Rígida de Entradas (Zod/Tipos)

@@ -31,7 +31,7 @@ mesmos nos dois casos - so muda o envelope que carrega cada um ate o peer
 certo.
 
 Antes de sair para a rede, todo sinal passa por `parseVoiceSignal`
-(`packages/core/src/p2p/protocol.ts`), no processo principal ou na ponte web:
+(`packages/core/src/p2p/protocol.ts`), no processo principal:
 tipo conhecido, `channelId` de ate 128 caracteres, `to` como chave hex valida
 e no maximo 64 KB de dados. Um SDP com video e simulcast fica em poucos KB;
 o teto so barra lixo e abuso.

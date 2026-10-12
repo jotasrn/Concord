@@ -18,7 +18,7 @@ Diferente do Discord, Slack ou Teams, o Concord adota uma arquitetura **100% des
 - **🖥️ Transmissão de Tela em até 4K @ 60 FPS**: Presets otimizados para jogos, vídeos ou leitura de código com priorização dos codecs AV1, VP9 e VP8.
 - **💬 Chat Avançado com Respostas Encadeadas**: Suporte a citações e respostas diretas (`reply_to`), histórico replicado via CRDT imutável e ordenação determinística por relógios de Lamport.
 - **🛡️ Identidade Soberana**: Sem e-mails, sem senhas armazenadas remotamente. Sua conta é um par de chaves assimétricas **Ed25519**, gerada a partir de uma **frase mnemônica BIP-39 de 12 palavras**.
-- **🌐 Dual-Mode (Desktop & Web)**: Roda nativamente no Windows com Electron (suporte a overlay transparente em jogos) e também em qualquer navegador via servidor de ponte WebSocket.
+- **🖥️ Só o executável**: Roda nativamente no Windows com Electron, com overlay transparente sobre jogos. Não existe versão de navegador nem servidor para hospedar.
 
 ---
 
@@ -33,7 +33,6 @@ Navegue pelos módulos detalhados da nossa Wiki através dos links abaixo ou pel
 | **[[3. Protocolo P2P e CRDT|3.-Protocolo-P2P-e-CRDT]]** | Descoberta distribuída (DHT), convergência assíncrona, ordem total determinística e sincronização offline. |
 | **[[4. Voz, Vídeo e Tela 4K|4.-Voz,-Video-e-Transmissao-4K]]** | Protocolo WebRTC full-mesh, sinalização P2P, áudio competitivo, webcam e streaming em resolução Ultra HD. |
 | **[[5. Servidores, Canais e Chat|5.-Servidores,-Canais-e-Mensagens]]** | Como criar servidores, convidar membros com códigos criptografados, organizar canais e moderar com cargos. |
-| **[[6. Deploy da Ponte Web|6.-Deploy-do-Servidor-Web]]** | Como hospedar a versão web em Docker, Railway, Render, Coolify ou VPS com proteção por rate limiting. |
 | **[[7. Segurança e Modelo de Ameaças|7.-Seguranca-e-Permissoes]]** | Análise detalhada do modelo de segurança descentralizado, defesas no reducer e mitigação de peers maliciosos. |
 | **[[8. Guia do Desenvolvedor|8.-Guia-do-Desenvolvedor]]** | Como clonar o monorepo, rodar localmente, executar a suíte de 152 testes e contribuir com o projeto. |
 | **[[9. FAQ e Solução de Problemas|9.-FAQ-e-Solucao-de-Problemas]]** | Respostas para as dúvidas mais frequentes, diagnóstico de conectividade, firewall e NAT traversal. |

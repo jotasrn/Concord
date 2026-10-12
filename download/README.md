@@ -113,5 +113,3 @@ sua conta. Para apagar tudo, apague essa pasta depois de desinstalar.
 
 Por enquanto só há build oficial para **Windows**. No Linux e no macOS dá para
 rodar a partir do código: veja [Rodar em desenvolvimento](../README.md#rodar-em-desenvolvimento).
-Também existe uma versão que roda no navegador, para quem hospedar a ponte web:
-[DEPLOY_WEB.md](../docs/DEPLOY_WEB.md).

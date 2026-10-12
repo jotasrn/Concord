@@ -68,13 +68,12 @@ WebRTC - vive so na conexao e nunca precisa sobreviver a nada.
 
 ```
 apps/desktop/   Electron - processo principal (Node) + janela do overlay
-apps/web/       Interface (React) - roda dentro do Electron OU no navegador
-apps/server/    Ponte WebSocket opcional p/ acessar pelo navegador (ver abaixo)
+apps/web/       Interface (React) - roda dentro do Electron
 packages/core/  O nucleo: identidade, log assinado, SQLite, rede P2P
 packages/types/ Contratos TypeScript compartilhados
 packages/config Configuracao base do TypeScript
 download/       Como baixar e instalar (para quem so quer usar o app)
-docs/           Arquitetura, seguranca, atualizacao, WebRTC, deploy web
+docs/           Arquitetura, seguranca, atualizacao, WebRTC
 ```
 
 Descricao arquivo por arquivo em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -113,14 +112,6 @@ instalador `Concord-Setup-<versao>.exe` e a versao sem instalacao
 Publicar uma versao nova (dispara build + release automatico via GitHub
 Actions): veja [docs/ATUALIZACAO.md](docs/ATUALIZACAO.md).
 
-## Cliente web (opcional)
-
-A interface tambem roda no navegador, falando com o nucleo P2P atraves de uma
-ponte WebSocket (`apps/server`) em vez de IPC do Electron - util para acessar
-de um dispositivo onde nao da para instalar o app. Captura de tela e o
-overlay de bolhas nao existem nesse modo (dependem de APIs do Electron).
-Deploy em [docs/DEPLOY_WEB.md](docs/DEPLOY_WEB.md).
-
 ## Scripts
 
 | Comando | Efeito |
@@ -146,9 +137,7 @@ npm test
   demais).
 - **`apps/web`** (38): transporte de voz P2P contra um WebRTC simulado
   (colisao de offers, candidates fora de ordem, tela, recuperacao de
-  conexao), ajuste de SDP do Opus, detector de voz e token de dispositivo.
-- **`apps/server`** (25): ponte web de ponta a ponta via WebSocket real -
-  sessao por dispositivo, faxina de pastas, limites, Origin, trava de senha.
+  conexao), ajuste de SDP do Opus, detector de voz.
 
 O CI roda lint, formatacao, build, testes, `npm audit` (bloqueante) e CodeQL.
 
@@ -161,12 +150,10 @@ Acesse a **[Wiki Oficial do Concord](https://github.com/jotasrn/Concord/wiki)** 
   problemas comuns (para quem usa o app)
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - os tres processos, o log
   assinado, arquivo por arquivo do que existe
-- [SECURITY.md](docs/SECURITY.md) - identidade, cifragem, moderacao, ponte
-  web, seguranca do executavel e o que continua em aberto
+- [SECURITY.md](docs/SECURITY.md) - identidade, cifragem, moderacao,
+  seguranca do executavel e o que continua em aberto
 - [ATUALIZACAO.md](docs/ATUALIZACAO.md) - como o auto-update funciona, como
   publicar uma versao e o que o release gera
-- [DEPLOY_WEB.md](docs/DEPLOY_WEB.md) - rodar a ponte WebSocket para acesso
-  pelo navegador
 - [WEBRTC.md](docs/WEBRTC.md) - sinalizacao, perfis de latencia, codecs e
   como o transporte e testado sem navegador
 

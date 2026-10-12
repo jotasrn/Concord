@@ -37,7 +37,6 @@ export default tseslint.config(
   {
     files: [
       'apps/desktop/**/*.{ts,js}',
-      'apps/server/**/*.ts',
       'packages/**/*.ts',
       '*.{js,mjs}',
       'apps/*/*.{js,ts}',

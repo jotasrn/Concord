@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Crown, MicOff, Pencil, Shield, UserMinus, Volume2 } from 'lucide-react';
+import { Crown, MicOff, Pencil, Phone, Shield, UserMinus, Volume2 } from 'lucide-react';
 import { Avatar, Button, ErrorBanner, Input } from '../../components/ui';
 import type { MemberView, PresenceStatus } from '../../types/concord-api';
 
@@ -25,8 +25,10 @@ export function MemberMenu({
   ehDono,
   possoGerenciar,
   possoExpulsar,
+  ehVoce,
   onClose,
   onChanged,
+  onCall,
 }: {
   serverId: string;
   member: MemberView;
@@ -35,8 +37,12 @@ export function MemberMenu({
   ehDono: boolean;
   possoGerenciar: boolean;
   possoExpulsar: boolean;
+  /** O membro aberto sou eu mesmo: esconde chamada direta e moderacao. */
+  ehVoce: boolean;
   onClose: () => void;
   onChanged: () => void;
+  /** Liga direto para o membro, fora de qualquer canal de voz. */
+  onCall: (userKey: string, displayName: string, avatar: string | null) => void;
 }) {
   const [presets, setPresets] = useState<RolePreset[]>([]);
   const [apelido, setApelido] = useState(member.nickname ?? '');
@@ -50,6 +56,13 @@ export function MemberMenu({
       .then((r) => setPresets(r.presets))
       .catch(() => undefined);
   }, []);
+
+  // Fecha com Esc, como os demais menus.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   async function executar(acao: () => Promise<unknown>) {
     setOcupado(true);
@@ -105,6 +118,25 @@ export function MemberMenu({
 
           {member.bio && <p className="text-xs text-ink-300">{member.bio}</p>}
           <ErrorBanner message={error} />
+
+          {/* Chamada direta (privada), fora de qualquer servidor de voz. */}
+          {!ehVoce && (
+            <button
+              disabled={presenca === 'OFFLINE'}
+              title={
+                presenca === 'OFFLINE'
+                  ? 'Offline - nao da para ligar agora'
+                  : `Ligar para ${member.displayName}`
+              }
+              onClick={() => {
+                onClose();
+                onCall(member.userKey, member.displayName, member.avatar);
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:bg-void-700 disabled:text-ink-400"
+            >
+              <Phone className="h-4 w-4" /> Chamada direta
+            </button>
+          )}
 
           {/* Apelido */}
           <section className="space-y-2">

@@ -376,12 +376,19 @@ export function useVoiceCall(
   // A lista de silenciados por moderacao tambem precisa refletir no campo
   // `muted` de cada participante, usado pelos indicadores visuais.
   useEffect(() => {
-    setState((s) => ({
-      ...s,
-      participants: s.participants.map((p) =>
-        p.muted === mutedKeys.has(p.key) ? p : { ...p, muted: mutedKeys.has(p.key) },
-      ),
-    }));
+    setState((s) => {
+      // So cria novo estado se algum participante realmente mudou - senao
+      // devolver o mesmo `s` evita um render extra (e qualquer loop caso a
+      // referencia de mutedKeys mude sem conteudo novo).
+      let mudou = false;
+      const participants = s.participants.map((p) => {
+        const alvo = mutedKeys.has(p.key);
+        if (p.muted === alvo) return p;
+        mudou = true;
+        return { ...p, muted: alvo };
+      });
+      return mudou ? { ...s, participants } : s;
+    });
   }, [mutedKeys]);
 
   /** Silencia (ou volta a ouvir) uma pessoa so para mim. */

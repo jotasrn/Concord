@@ -73,6 +73,13 @@ export function useDirectCall(selfKey: string, ocupado: () => boolean) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  // `ocupado` muda de identidade a cada render do AppPage. Guardado num ref,
+  // o efeito que escuta convites nao precisa dele nas dependencias - sem isso,
+  // o listener social era removido e registrado de novo a cada render, podendo
+  // perder um convite que chegasse no meio.
+  const ocupadoRef = useRef(ocupado);
+  ocupadoRef.current = ocupado;
+
   const engineRef = useRef<AudioEngine | null>(null);
   const transportRef = useRef<PeerToPeerTransport | null>(null);
   const mixerRef = useRef(new RemoteAudioMixer());
@@ -255,7 +262,7 @@ export function useDirectCall(selfKey: string, ocupado: () => boolean) {
       if (evento === 'call:invite') {
         // Ja em outra chamada (de servidor ou direta): recusa educadamente sem
         // nem mostrar o popup, para nao interromper quem esta ocupado.
-        if (ocupado() || stateRef.current.phase !== 'idle') {
+        if (ocupadoRef.current() || stateRef.current.phase !== 'idle') {
           void window.concord.calls.respond(d.from, d.callId, false).catch(() => undefined);
           return;
         }
@@ -286,7 +293,7 @@ export function useDirectCall(selfKey: string, ocupado: () => boolean) {
         if (stateRef.current.phase !== 'idle') finalizar('a pessoa encerrou');
       }
     });
-  }, [iniciarMidia, finalizar, ocupado]);
+  }, [iniciarMidia, finalizar]);
 
   // Sinalizacao WebRTC da chamada ativa.
   useEffect(() => {

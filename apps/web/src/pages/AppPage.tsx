@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CornerDownRight,
   Hash,
@@ -76,7 +76,14 @@ export function AppPage({ profile }: { profile: Profile }) {
   const [versaoApp, setVersaoApp] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const report = (e: unknown) => setError(e instanceof Error ? e.message : 'Erro inesperado');
+  // Estavel entre renders: e dependencia dos carregadores em useServerData,
+  // que por sua vez disparam efeitos. Recria-lo a cada render fazia o app
+  // recarregar servidores, canais e mensagens em loop - a maior fonte de
+  // travamento.
+  const report = useCallback(
+    (e: unknown) => setError(e instanceof Error ? e.message : 'Erro inesperado'),
+    [],
+  );
 
   const {
     servers,
@@ -92,7 +99,13 @@ export function AppPage({ profile }: { profile: Profile }) {
     loadMessages,
   } = useServerData(report);
 
-  const memberNames = new Map(members.map((m) => [m.userKey, m.displayName]));
+  // Memorizados pela lista de membros. useVoiceCall tem efeitos que dependem
+  // destes objetos; recria-los a cada render disparava setState em loop
+  // ("Maximum update depth exceeded") e deixava tudo lento.
+  const memberNames = useMemo(
+    () => new Map(members.map((m) => [m.userKey, m.displayName])),
+    [members],
+  );
   /**
    * Autor de mensagem resolvido pela lista de membros, nao pelo nome gravado
    * na operacao.
@@ -103,7 +116,7 @@ export function AppPage({ profile }: { profile: Profile }) {
    * o nome na hora da renderizacao. Sem isso, o apelido novo aparece na lista
    * de membros e na chamada, mas o chat continua mostrando o antigo.
    */
-  const membrosPorChave = new Map(members.map((m) => [m.userKey, m]));
+  const membrosPorChave = useMemo(() => new Map(members.map((m) => [m.userKey, m])), [members]);
   const autorDaMensagem = (authorKey: string, authorName: string) => {
     const membro = membrosPorChave.get(authorKey);
     return {
@@ -112,7 +125,11 @@ export function AppPage({ profile }: { profile: Profile }) {
     };
   };
   // Silenciados pela moderacao: a chamada aplica isso em quem recebe.
-  const silenciados = new Set(members.filter((m) => m.muted).map((m) => m.userKey));
+  // Memorizado: e passado a useVoiceCall, cujos efeitos dependem dele.
+  const silenciados = useMemo(
+    () => new Set(members.filter((m) => m.muted).map((m) => m.userKey)),
+    [members],
+  );
   const call = useVoiceCall(activeServer, memberNames, silenciados);
   /*
    * Uma so chamada por vez. useDirectCall consulta este predicado antes de
@@ -916,8 +933,16 @@ export function AppPage({ profile }: { profile: Profile }) {
                 ehDono={alvo.userKey === donoDoServidor}
                 possoGerenciar={temPermissao(1 << 7)}
                 possoExpulsar={temPermissao(1 << 9)}
+                ehVoce={alvo.userKey === profile.publicKey}
                 onClose={() => setMembroAberto(null)}
                 onChanged={() => void loadServerContent(activeServer)}
+                onCall={(userKey, displayName, avatar) => {
+                  if (call.state.channelId) {
+                    setError('Saia do canal de voz antes de iniciar uma chamada direta.');
+                    return;
+                  }
+                  void directCall.call(userKey, displayName, avatar);
+                }}
               />
             );
           })()}

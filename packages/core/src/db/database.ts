@@ -1,9 +1,87 @@
-import Database from 'better-sqlite3';
+import { existsSync, openSync, readSync, closeSync, copyFileSync, rmSync } from 'node:fs';
+import Database from 'better-sqlite3-multiple-ciphers';
 import { Vault } from '../crypto/vault';
 import { Operation } from '../ops/types';
 import { SCHEMA_SQL, SCHEMA_VERSION } from './schema';
 
 export type Db = Database.Database;
+
+/**
+ * Todo arquivo SQLite em texto puro comeca com estes 16 bytes. Um banco
+ * cifrado tem o cabecalho embaralhado junto do resto, entao a presenca exata
+ * desta assinatura e o que distingue um banco legado (a migrar) de um ja
+ * cifrado.
+ */
+const SQLITE_PLAINTEXT_HEADER = 'SQLite format 3\0';
+
+/** Aplica a chave de cifragem crua (32 bytes) como `PRAGMA key`. */
+function applyKey(db: Db, encryptionKey: Buffer): void {
+  // Hex entre x'...' diz ao driver que a chave ja e material bruto de 256
+  // bits - sem isso ele rodaria um KDF proprio por cima, desnecessario porque
+  // a chave ja vem de um hash do seed da identidade.
+  db.pragma(`key = "x'${encryptionKey.toString('hex')}'"`);
+}
+
+/** Le os primeiros bytes para saber se o arquivo e um SQLite em texto puro. */
+function isPlaintextDatabase(path: string): boolean {
+  if (!existsSync(path)) return false;
+  const fd = openSync(path, 'r');
+  try {
+    const buf = Buffer.alloc(16);
+    const lidos = readSync(fd, buf, 0, 16, 0);
+    return lidos === 16 && buf.toString('latin1') === SQLITE_PLAINTEXT_HEADER;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Cifra um banco legado que estava em texto puro.
+ *
+ * Bancos criados antes desta versao gravavam tudo em claro: nome de servidor,
+ * canais, membros e metadados do log ficavam legiveis para quem abrisse o
+ * arquivo. Aqui o banco e cifrado no proprio lugar, uma unica vez, na primeira
+ * abertura apos a atualizacao.
+ *
+ * `PRAGMA rekey` num banco aberto sem chave cifra o arquivo existente in-place,
+ * reescrevendo cada pagina. Isso roda sobre o unico banco do usuario, com todo
+ * o historico dele - entao, por seguranca, uma copia do arquivo em claro e
+ * feita antes. Se a cifragem falhar no meio (disco cheio, queda de energia), o
+ * backup e restaurado e a proxima abertura tenta de novo; so depois de
+ * confirmar que o banco cifrado abre com a chave o backup e apagado.
+ */
+function encryptLegacyDatabase(path: string, encryptionKey: Buffer): void {
+  const backup = `${path}.plaintext-bak`;
+  copyFileSync(path, backup);
+
+  try {
+    const db = new Database(path);
+    try {
+      db.pragma(`rekey = "x'${encryptionKey.toString('hex')}'"`);
+    } finally {
+      db.close();
+    }
+
+    // Confirma que o resultado abre de fato com a chave antes de descartar o
+    // backup - um rekey que "terminou" mas gerou arquivo ilegivel nao pode
+    // levar o unico backup junto.
+    const verif = new Database(path);
+    try {
+      applyKey(verif, encryptionKey);
+      verif.prepare('SELECT count(*) FROM sqlite_master').get();
+    } finally {
+      verif.close();
+    }
+
+    rmSync(backup, { force: true });
+  } catch (erro) {
+    // Algo deu errado: devolve o arquivo em claro intacto. O usuario nao perde
+    // nada; so continua sem cifra ate a proxima tentativa.
+    copyFileSync(backup, path);
+    rmSync(backup, { force: true });
+    throw erro;
+  }
+}
 
 /**
  * Acrescenta colunas que apareceram depois da primeira versao.
@@ -62,15 +140,38 @@ function migratePendingInvitesKey(db: Db): void {
   `);
 }
 
-export function openDatabase(path: string): Db {
+/**
+ * Abre (e cria, se preciso) o banco local.
+ *
+ * Com `encryptionKey`, o arquivo em disco fica cifrado (ChaCha20) e so abre
+ * com a mesma chave; um banco legado em texto puro e migrado na primeira vez.
+ * Sem chave - em memoria ou em testes - o banco fica em claro, o que nao tem
+ * problema porque nunca toca o disco do usuario.
+ */
+export function openDatabase(path: string, encryptionKey?: Buffer): Db {
+  if (encryptionKey && path !== ':memory:' && isPlaintextDatabase(path)) {
+    encryptLegacyDatabase(path, encryptionKey);
+  }
+
   const db = new Database(path);
-  db.exec(SCHEMA_SQL);
-  addMissingColumns(db);
-  db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
-    'schema_version',
-    String(SCHEMA_VERSION),
-  );
-  return db;
+  try {
+    // A chave precisa ser aplicada antes de qualquer leitura: e ela que torna o
+    // arquivo inteligivel.
+    if (encryptionKey && path !== ':memory:') applyKey(db, encryptionKey);
+
+    db.exec(SCHEMA_SQL);
+    addMissingColumns(db);
+    db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
+      'schema_version',
+      String(SCHEMA_VERSION),
+    );
+    return db;
+  } catch (erro) {
+    // Chave errada ou arquivo corrompido: fecha o handle antes de propagar,
+    // senao o arquivo fica travado (o processo nem conseguiria apaga-lo).
+    db.close();
+    throw erro;
+  }
 }
 
 export function openInMemoryDatabase(): Db {

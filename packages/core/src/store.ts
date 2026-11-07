@@ -84,10 +84,13 @@ export class ConcordStore {
   readonly social: SocialStore;
 
   constructor(dbPath: string, identity: Identity) {
-    this.db = openDatabase(dbPath);
     this.identity = identity;
     this.publicKeyHex = toHex(identity.publicKey);
+    // O Vault nasce antes do banco: e dele que sai a chave que cifra o arquivo
+    // SQLite inteiro. Em memoria (testes) nao ha arquivo a proteger, entao
+    // segue sem chave.
     this.vault = new Vault(identity.privateKey);
+    this.db = openDatabase(dbPath, dbPath === ':memory:' ? undefined : this.vault.databaseKey);
     this.social = new SocialStore(this.db, this.vault);
   }
 

@@ -40,11 +40,14 @@ jobs:
       - name: Testes
         run: npm test
 
-      # Bloqueante: a arvore estava com 29 vulnerabilidades (2 criticas)
-      # porque este passo nunca falhava o build. Zerado na mesma revisao que
-      # tornou o passo obrigatorio - daqui em diante, quebra o PR.
-      - name: Vulnerabilidades conhecidas nas dependencias
-        run: npm audit --audit-level=high
+      # Bloqueante, mas so sobre o que roda na maquina do usuario (--omit=dev).
+      # Uma CVE em ferramenta de build (vite, eslint, zod, undici) nao vai no
+      # app empacotado e muitas vezes nao tem correcao por semanas - travar o
+      # merge por isso levava a ignorar o CI. O Dependabot cuida das devDeps
+      # abrindo PRs de atualizacao; aqui garantimos que nenhuma dependencia de
+      # PRODUCAO com falha alta entra.
+      - name: Vulnerabilidades conhecidas nas dependencias de producao
+        run: npm audit --omit=dev --audit-level=high
 
   codeql:
     runs-on: ubuntu-latest

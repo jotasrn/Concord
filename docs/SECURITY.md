@@ -42,25 +42,32 @@ quem recebe a operacao), nunca so no React.
 
 ## Em repouso
 
-**Nem tudo no banco local e cifrado - so o que o Vault explicitamente sela.**
-Hoje isso e o conteudo de mensagem (`message.content`) e o codigo de convite
-pendente (que carrega a chave do servidor). O resto da projecao - nome de
-servidor e de canal, lista de membros, amigos, apelido, avatar, biografia, e
-os metadados de toda operacao do log (quem escreveu, em qual servidor, quando)
-- fica em **texto claro** no `concord.db`. Quem tiver acesso ao arquivo (um
-backup, outro usuario da mesma maquina, um antivirus que indexa o conteudo)
-le isso sem precisar de senha nenhuma.
+**O arquivo do banco inteiro e cifrado.** O `concord.db` usa cifragem do
+arquivo completo (ChaCha20-Poly1305, via SQLCipher/wxSQLite3), com a chave
+derivada da semente da identidade (`concord:db:v1:` + seed, rotulo proprio,
+diferente da chave que o Vault usa para o conteudo das mensagens). Sem a frase
+de recuperacao nao se chega a chave, e sem a chave o arquivo e ruido - nem o
+cabecalho SQLite aparece. Isso cobre tudo que antes ficava legivel no disco:
+nome de servidor e de canal, lista de membros, amigos, apelido, avatar,
+biografia e os metadados de cada operacao do log (quem escreveu, onde, quando).
 
-Isso e uma lacuna real, nao uma decisao deliberada - cifrar todos esses campos
-exigiria reescrever boa parte das queries da projecao (cada SELECT que hoje
-le a coluna direto passaria a abrir/fechar o Vault) e ainda deixaria o
-*volume* de mensagens e a *estrutura* dos servidores visiveis mesmo cifrando
-o conteudo. Fica registrado aqui para nao haver duvida sobre o que o Vault
-protege de fato.
+Dentro desse banco ja cifrado, o conteudo de mensagem e o codigo de convite
+pendente passam por uma **segunda** camada (o Vault, AES-256-GCM): mesmo quem
+obtivesse a chave do arquivo ainda nao leria o texto das conversas sem a chave
+do Vault. As duas chaves saem da mesma semente, mas por rotulos distintos -
+vazar uma nao entrega a outra.
 
-Testes (`crypto/vault.test.ts`, `identity/identity.test.ts`) verificam que o arquivo em disco
-nao contem nenhuma palavra da frase de recuperacao nem o texto de uma
-mensagem - so isso, nada alem disso.
+Bancos criados antes desta versao estavam em texto puro. Na primeira abertura
+apos a atualizacao eles sao cifrados no lugar (`PRAGMA rekey`), uma unica vez.
+Antes de reescrever, uma copia do arquivo e guardada; o backup so e apagado
+depois de confirmar que o banco cifrado abre com a chave, e e restaurado se a
+cifragem falhar - o unico banco do usuario, com todo o historico, nunca fica
+em estado irrecuperavel.
+
+Testes (`db/database.test.ts`, `crypto/vault.test.ts`, `identity/identity.test.ts`)
+verificam que o arquivo em disco nao comeca com o cabecalho de um SQLite em
+texto puro, nao contem nome de servidor/canal nem texto de mensagem em claro,
+nao abre sem a chave certa, e que um banco legado e migrado sem perder dados.
 
 ## Validacao de entrada
 
@@ -187,7 +194,6 @@ todo `npm test`.
   mensagens futuras, porque a chave nunca roda. Rotacionar ao expulsar
   exigiria reenviar a chave nova a cada membro restante (sender keys ou algo
   como MLS), uma mudanca de protocolo maior que o escopo desta rodada.
-- **Metadados em texto claro no disco** - ver [Em repouso](#em-repouso).
 
 Resolvidos desde a primeira versao desta lista: o Electron 32 fora de suporte
 (agora 42) e a ponte web sem limite nem identificacao (a ponte foi removida:

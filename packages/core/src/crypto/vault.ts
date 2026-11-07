@@ -19,6 +19,8 @@ const PREFIX = `${VERSION}:`;
 
 export class Vault {
   private readonly key: Buffer;
+  /** Chave de cifragem do arquivo SQLite inteiro (PRAGMA key). */
+  readonly databaseKey: Buffer;
 
   constructor(identitySeed: Uint8Array) {
     if (identitySeed.length !== 32) {
@@ -28,6 +30,13 @@ export class Vault {
     // funcoes nunca devem compartilhar material de chave.
     this.key = createHash('sha256')
       .update('concord:vault:v1:')
+      .update(Buffer.from(identitySeed))
+      .digest();
+    // Rotulo proprio: a chave que abre o arquivo do banco nao pode ser a mesma
+    // que cifra o conteudo das mensagens dentro dele. Vazar uma nao entrega a
+    // outra.
+    this.databaseKey = createHash('sha256')
+      .update('concord:db:v1:')
       .update(Buffer.from(identitySeed))
       .digest();
   }

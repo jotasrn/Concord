@@ -87,7 +87,7 @@ writeFileSync(
       dependencies: {
         // Apenas modulos que precisam existir em disco. Todo o resto (core,
         // types, bip39) foi inlinado no bundle pelo esbuild.
-        'better-sqlite3': require(join(repoRoot, 'node_modules', 'better-sqlite3', 'package.json')).version,
+        'better-sqlite3-multiple-ciphers': require(join(repoRoot, 'node_modules', 'better-sqlite3-multiple-ciphers', 'package.json')).version,
         hyperswarm: require(join(repoRoot, 'node_modules', 'hyperswarm', 'package.json')).version,
         'electron-updater': require(join(repoRoot, 'node_modules', 'electron-updater', 'package.json'))
           .version,

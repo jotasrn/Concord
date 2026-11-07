@@ -1,10 +1,38 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
+    # Sem estes limites, o Dependabot abre PRs incompativeis que sempre falham
+    # no CI - por exemplo subindo @types/react-dom para 19 enquanto @types/react
+    # e o app seguem no 18, o que quebra os tipos de JSX (ReactNode/bigint).
+    groups:
+      # Tipos do React sobem juntos ou nao sobem: um sem o outro nao compila.
+      react-types:
+        patterns:
+          - '@types/react'
+          - '@types/react-dom'
+      # Toda a cadeia do electron-builder num PR so, em vez de uma dezena de
+      # PRs transitivos que so fazem sentido juntos.
+      build-tooling:
+        patterns:
+          - 'electron-builder'
+          - 'app-builder-*'
+          - '@electron/*'
+          - 'dmg-builder'
+    ignore:
+      # O app e React 18. Enquanto nao for migrado de proposito, o Dependabot
+      # nao deve empurrar React 19 (nem seus tipos) - esses PRs so quebram.
+      - dependency-name: 'react'
+        versions: ['>=19']
+      - dependency-name: 'react-dom'
+        versions: ['>=19']
+      - dependency-name: '@types/react'
+        versions: ['>=19']
+      - dependency-name: '@types/react-dom'
+        versions: ['>=19']
   - package-ecosystem: github-actions
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly

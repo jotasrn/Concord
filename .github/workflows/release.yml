@@ -33,6 +33,26 @@ jobs:
           node-version: 22
           cache: npm
 
+      # A tag (v0.8.1) e a versao do package.json tem que ser a MESMA coisa: o
+      # electron-builder nomeia os arquivos e escreve o latest.yml a partir da
+      # versao do package.json, enquanto o release no GitHub e os links usam a
+      # tag. Se divergirem, o build "passa" mas gera um release incoerente - o
+      # auto-update aponta para uma versao que nao existe. Falhar aqui, cedo e
+      # com mensagem clara, e melhor que publicar esse lixo.
+      - name: Validar que a tag casa com a versao do package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSAO_PKG="$(node -p "require('./package.json').version")"
+          VERSAO_TAG="${GITHUB_REF_NAME#v}"
+          if [ "$VERSAO_PKG" != "$VERSAO_TAG" ]; then
+            echo "::error::A tag e $GITHUB_REF_NAME (versao $VERSAO_TAG), mas o package.json esta em $VERSAO_PKG."
+            echo "Antes de criar a tag, atualize a versao em package.json e apps/desktop/package.json e faca commit."
+            exit 1
+          fi
+          echo "Versao conferida: $VERSAO_PKG"
+
       - name: Instalar dependencias
         run: npm ci
 
@@ -75,7 +95,10 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          VERSAO="${TAG#v}"
+          # Versao vem do package.json (o mesmo que o electron-builder usou para
+          # nomear os arquivos), nao da tag - o guard anterior ja garante que
+          # sao iguais, mas assim os nomes batem com o que existe em disco.
+          VERSAO="$(node -p "require('../../../package.json').version")"
           cp "Concord-Setup-${VERSAO}.exe" Concord-Setup.exe
           cp "Concord-Portable-${VERSAO}.zip" Concord-Portable.zip
           sha256sum Concord-Setup.exe Concord-Portable.zip \
@@ -96,8 +119,10 @@ jobs:
             echo
             echo "Quem ja tem o Concord instalado nao precisa baixar nada: o app atualiza sozinho."
             echo
+            # As notas automaticas sao um extra: se a API falhar, o release nao
+            # pode quebrar por causa disso.
             gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-              -f tag_name="$TAG" --jq .body
+              -f tag_name="$TAG" --jq .body || echo "_(notas automaticas indisponiveis)_"
           } > notas.md
           gh release edit "$TAG" --notes-file notas.md --repo "$GITHUB_REPOSITORY"
 

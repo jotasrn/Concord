@@ -1,7 +1,7 @@
 {
   "name": "concord",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.8.2",
   "license": "MIT",
   "description": "Concord - plataforma de comunicacao P2P para gamers (sem servidor)",
   "workspaces": [
@@ -28,5 +28,12 @@
     "prettier": "^3.9.9",
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.71.0"
+  },
+  "overrides": {
+    "fast-uri": "^4.2.3",
+    "minimatch": "^11.0.5",
+    "zod": "^4.6.7",
+    "zod-validation-error": "^5.0.0",
+    "undici": "^7.17.0"
   }
 }

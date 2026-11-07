@@ -7,6 +7,7 @@ import {
   Gauge,
   Headphones,
   HeadphoneOff,
+  Maximize2,
   Mic,
   MicOff,
   Monitor,
@@ -245,6 +246,17 @@ export function CallStage({
 }) {
   const duracao = useCallDuration(state.joinedAt);
   const [menuAlvo, setMenuAlvo] = useState<ParticipantMenuTarget | null>(null);
+  // Container do destaque: e ele que entra em tela cheia, levando o video e o
+  // rotulo com o nome junto. Fica no proprio palco, nao no visualizador
+  // flutuante - era onde faltava.
+  const destaqueRef = useRef<HTMLDivElement>(null);
+
+  const alternarTelaCheia = () => {
+    const el = destaqueRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void el.requestFullscreen().catch(() => undefined);
+  };
 
   const tiles = useMemo<Tile[]>(() => {
     const proprio: Tile = {
@@ -342,7 +354,10 @@ export function CallStage({
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {emDestaque ? (
           <div className="flex h-full flex-col gap-3">
-            <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-violet-800/50 bg-black">
+            <div
+              ref={destaqueRef}
+              className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-violet-800/50 bg-black"
+            >
               {emDestaque.stream ? (
                 <Video stream={emDestaque.stream} />
               ) : (
@@ -365,6 +380,15 @@ export function CallStage({
                   {emDestaque.name}
                   {emDestaque.isSelf && <span className="ml-1 text-ink-400">(voce)</span>}
                 </span>
+                {emDestaque.stream && (
+                  <button
+                    onClick={alternarTelaCheia}
+                    title="Tela cheia (Esc para sair)"
+                    className="rounded-sm bg-black/60 p-1.5 text-ink-200 hover:text-violet-300"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
                   onClick={() => onTogglePin(emDestaque.key)}
                   title="Desafixar do palco"

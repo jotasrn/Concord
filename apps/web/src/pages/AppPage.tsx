@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CornerDownRight,
   Hash,
-  LogIn,
+  Ticket,
   MicOff,
   Plus,
   Radio,
@@ -503,7 +503,7 @@ export function AppPage({ profile, onLoaded }: { profile: Profile; onLoaded: () 
             aria-label="Entrar com um convite"
             className="flex h-11 w-11 items-center justify-center rounded-2xl border border-dashed border-void-500 text-ink-300 transition hover:border-violet-500 hover:text-violet-400"
           >
-            <LogIn className="h-5 w-5" />
+            <Ticket className="h-5 w-5" />
           </button>
           <button
             onClick={createServer}
